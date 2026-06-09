@@ -15,9 +15,13 @@ export function requireArg(name: string): string {
   return val;
 }
 
+export function normalizeHandle(handle: string): string {
+  return handle.startsWith('@') ? handle.slice(1) : handle;
+}
+
 export function resolveHandle(): string {
   const fromArg = getArg('handle');
-  if (fromArg) return fromArg;
+  if (fromArg) return normalizeHandle(fromArg);
 
   const accountsPath = path.resolve('config/accounts.json');
   const accounts: { accounts: Array<{ handle: string; enabled: boolean }> } =
@@ -27,5 +31,5 @@ export function resolveHandle(): string {
     console.error('No enabled account found in config/accounts.json and --handle not provided');
     process.exit(1);
   }
-  return first.handle;
+  return normalizeHandle(first.handle);
 }
