@@ -2,10 +2,7 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import dotenv from 'dotenv';
 import * as schema from './schema';
-
-dotenv.config();
 
 const dbUrl = process.env.DATABASE_URL ?? 'file:./data/market-watcher.sqlite';
 const dbPath = dbUrl.replace(/^file:/, '');
