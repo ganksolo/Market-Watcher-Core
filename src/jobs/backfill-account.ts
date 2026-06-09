@@ -150,9 +150,11 @@ async function main(): Promise<void> {
         result.inserted ? insertedPosts++ : duplicatedPosts++;
       }
 
+      const isLastPage = !meta?.next_token;
       const cursorPatch: Parameters<typeof updateCursor>[1] = {
         lastPaginationToken: meta?.next_token ?? null,
         oldestTweetId: meta?.oldest_id ?? undefined,
+        ...(isLastPage ? { backfillCompleted: 1 } : {}),
         updatedAt: pageNow,
       };
       if (isFirstPage && meta?.newest_id) {
@@ -170,7 +172,6 @@ async function main(): Promise<void> {
       );
 
       if (!currentPaginationToken) {
-        updateCursor(handle, { backfillCompleted: 1, updatedAt: nowISO() });
         logger.info({ handle }, 'Backfill complete — no more pages');
         break;
       }
