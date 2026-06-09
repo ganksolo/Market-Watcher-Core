@@ -8,7 +8,7 @@ import { sleep } from '../utils/sleep';
 import { createXApiClient, ApiError } from '../clients/x-api-client';
 import type { XApiListResponse, XTweet } from '../clients/x-api-types';
 import { getWatchAccount } from '../services/account-service';
-import { getCursor, updateCursor } from '../services/cursor-service';
+import { getCursor, initCursor, updateCursor } from '../services/cursor-service';
 import { upsertPost } from '../services/post-service';
 import { createRun, finishRun } from '../services/run-log-service';
 
@@ -72,9 +72,12 @@ async function main(): Promise<void> {
 
     logger.info({ handle, xUserId, maxPages }, 'Starting backfill');
 
+    initCursor(handle, nowISO());
+
     while (true) {
-      const estimatedCostSoFar = pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost;
-      if (estimatedCostSoFar >= p.maxEstimatedCostPerRun) {
+      const estimatedCostIfWeGoAhead = (pagesCount + 1) * p.maxResultsPerPage * p.estimatedPostReadCost;
+      if (estimatedCostIfWeGoAhead > p.maxEstimatedCostPerRun) {
+        const estimatedCostSoFar = pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost;
         logger.warn({ handle, pagesCount, estimatedCostSoFar }, 'Cost limit reached');
         finishRun(runId, {
           status: 'stopped_by_cost_limit',
@@ -150,7 +153,7 @@ async function main(): Promise<void> {
         result.inserted ? insertedPosts++ : duplicatedPosts++;
       }
 
-      const isLastPage = !meta?.next_token;
+      const isLastPage = (tweets.length > 0 && !meta?.next_token) || meta?.result_count === 0;
       const cursorPatch: Parameters<typeof updateCursor>[1] = {
         lastPaginationToken: meta?.next_token ?? null,
         oldestTweetId: meta?.oldest_id ?? undefined,
