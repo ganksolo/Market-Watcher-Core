@@ -93,19 +93,21 @@ X API timeline 端点返回顺序为 `created_at` 降序（newest first）。因
 
 ```typescript
 // 每页 updateCursor 调用示例（首页）
-if (isFirstPage && tweets.length > 0) {
+const newestCreatedAt = tweets[0]?.created_at;
+if (isFirstPage && newestCreatedAt) {
   updateCursor(handle, {
     latestTweetId: newestId,
-    latestTweetCreatedAt: tweets[0].created_at,
+    latestTweetCreatedAt: newestCreatedAt,
     updatedAt: nowISO(),
   });
 }
 
 // 每页更新 oldest（每页非空时写入）
-if (tweets.length > 0) {
+const oldestCreatedAt = tweets[tweets.length - 1]?.created_at;
+if (tweets.length > 0 && oldestCreatedAt) {
   updateCursor(handle, {
     oldestTweetId: oldestId,
-    oldestTweetCreatedAt: tweets[tweets.length - 1].created_at,
+    oldestTweetCreatedAt: oldestCreatedAt,
     lastPaginationToken: nextToken ?? null,
     updatedAt: nowISO(),
   });
@@ -120,10 +122,12 @@ if (tweets.length > 0) {
 
 ```typescript
 // sync 原子 cursor 更新（已有 latestTweetId 写入，补充 createdAt）
-if (firstPageTweets.length > 0) {
+// firstPageTweets 即首页响应的 tweets 数组，现有实现中已存在（用于 upsertPost 循环）
+const latestCreatedAt = firstPageTweets[0]?.created_at;
+if (firstPageTweets.length > 0 && latestCreatedAt) {
   updateCursor(handle, {
     latestTweetId: newestId,
-    latestTweetCreatedAt: firstPageTweets[0].created_at,
+    latestTweetCreatedAt: latestCreatedAt,
     updatedAt: nowISO(),
   });
 }
@@ -149,14 +153,14 @@ export function getLatestFailedRun(handle: string) {
   return db
     .select()
     .from(fetchRuns)
-    .where(and(eq(fetchRuns.accountHandle, handle), ne(fetchRuns.status, 'success')))
+    .where(and(eq(fetchRuns.accountHandle, handle), eq(fetchRuns.status, 'failed')))
     .orderBy(desc(fetchRuns.id))
     .limit(1)
     .get();
 }
 ```
 
-需要从 `drizzle-orm` 补充导入 `and`、`ne`。
+需要从 `drizzle-orm` 补充导入 `and`。`stopped_by_page_limit` / `stopped_by_cost_limit` 是受控停止，不算失败，不纳入 Last err。
 
 ### Status 输出格式
 
