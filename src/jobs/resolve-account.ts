@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { requireArg } from '../utils/cli';
+import { resolveHandle } from '../utils/cli';
 import { logger } from '../utils/logger';
 import { nowISO } from '../utils/date';
 import { createXApiClient, ApiError } from '../clients/x-api-client';
@@ -18,7 +18,7 @@ const USER_FIELDS = [
 ].join(',');
 
 async function main(): Promise<void> {
-  const handle = requireArg('handle');
+  const handle = resolveHandle();
 
   let runId: number | undefined = undefined;
 
