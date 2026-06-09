@@ -75,12 +75,18 @@ logs/fetch-runs/              → run logs
 
 ## 当前进度
 
-Phase 1、2 已完成。下一步：Phase 3 — 实现 services 层 + `src/jobs/resolve-account.ts`。
+Phase 1、2、3 已完成。下一步：Phase 4 — `post-service` + `backfill-account` job。
 
 **Phase 2 产物：**
 - `src/db/index.ts` — Drizzle `db` 单例（无 dotenv，由 job 入口负责加载 env）
 - `src/clients/x-api-types.ts` — `XUser`, `XTweet`, `XApiResponse<T>`, `XApiListResponse<T>`, `XApiError`
 - `src/clients/x-api-client.ts` — `XApiClient.get<T>()`, `ApiError`, `createXApiClient()`
+
+**Phase 3 产物：**
+- `src/services/account-service.ts` — `upsertWatchAccount`, `getWatchAccount`, `upsertXUser`
+- `src/services/cursor-service.ts` — `initCursor`, `getCursor`（Phase 4 需补充 `updateCursor`）
+- `src/services/run-log-service.ts` — `createRun`, `finishRun`, `getLatestRun`
+- `src/jobs/resolve-account.ts` — `pnpm x:resolve --handle <handle>`
 
 ### Environment
 
