@@ -122,7 +122,7 @@ if (tweets.length > 0 && oldestCreatedAt) {
 
 ```typescript
 // sync 原子 cursor 更新（已有 latestTweetId 写入，补充 createdAt）
-// firstPageTweets 即首页响应的 tweets 数组，现有实现中已存在（用于 upsertPost 循环）
+// firstPageTweets：实现时新增的变量，保存首页响应的 tweets 数组（当前 sync-account.ts 用 tweets 变量逐页覆盖，需提取首页单独保存）
 const latestCreatedAt = firstPageTweets[0]?.created_at;
 if (firstPageTweets.length > 0 && latestCreatedAt) {
   updateCursor(handle, {
@@ -135,7 +135,7 @@ if (firstPageTweets.length > 0 && latestCreatedAt) {
 
 ### 完成标准
 
-- backfill 完成后，`fetch_cursors` 中两个时间字段均不为 null
+- backfill 抓到至少一条 tweet 时，`fetch_cursors` 中两个时间字段均应被写入（完全无推文的账号时间字段可以为 null）
 - sync 每次成功且有新推文后，`latestTweetCreatedAt` 更新
 - 空页时不尝试读取 `tweets[0]`，不写时间字段
 - 值来自 X API 原始 `tweet.created_at`（ISO 8601 格式）
@@ -180,7 +180,7 @@ Last err:  n/a
 - 时间格式：直接显示 `cursor.latestTweetCreatedAt`（原始 ISO）；`null` 时省略括号部分
 - 成本：`'$' + estimatedCostUsd.toFixed(2)`；`null` 时省略 `·` 及成本部分
 - `Last err`：调用 `getLatestFailedRun(handle)`，显示其 `errorMessage`；无失败 run 时显示 `n/a`
-- `Last err` 行：仅在 `latestRun` 存在时输出（无任何 run 时不输出此行）
+- `Last err` 行：始终输出，无失败 run 时显示 `n/a`（不依赖 `latestRun` 是否存在）
 
 ### 完成标准
 
