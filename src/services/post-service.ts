@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, and, like, asc } from 'drizzle-orm';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
 
@@ -42,5 +42,14 @@ export function getPostsByHandle(
     .where(eq(xPosts.authorHandle, handle))
     .limit(opts?.limit ?? 100)
     .offset(opts?.offset ?? 0)
+    .all();
+}
+
+export function getPostsByHandleAndDate(handle: string, date: string) {
+  return db
+    .select()
+    .from(xPosts)
+    .where(and(eq(xPosts.authorHandle, handle), like(xPosts.createdAt, `${date}%`)))
+    .orderBy(asc(xPosts.createdAt))
     .all();
 }
