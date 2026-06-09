@@ -1,0 +1,15 @@
+{
+  "default": {
+    "maxResultsPerPage": 100,
+    "maxPagesPerRun": 10,
+    "maxPostsPerRun": 1000,
+    "includeReplies": true,
+    "includeRetweets": false,
+    "includeQuotes": true,
+    "stopWhenNoNextToken": true,
+    "sleepMsBetweenRequests": 1200,
+    "estimatedPostReadCost": 0.005,
+    "estimatedUserReadCost": 0.01,
+    "maxEstimatedCostPerRun": 5
+  }
+}
