@@ -162,6 +162,12 @@ async function main(): Promise<void> {
       };
       if (isFirstPage && meta?.newest_id) {
         cursorPatch.latestTweetId = meta.newest_id;
+        const newestCreatedAt = tweets[0]?.created_at;
+        if (newestCreatedAt) cursorPatch.latestTweetCreatedAt = newestCreatedAt;
+      }
+      const oldestCreatedAt = tweets[tweets.length - 1]?.created_at;
+      if (tweets.length > 0 && oldestCreatedAt) {
+        cursorPatch.oldestTweetCreatedAt = oldestCreatedAt;
       }
       updateCursor(handle, cursorPatch);
       isFirstPage = false;
