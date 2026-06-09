@@ -137,7 +137,7 @@ if (firstPageTweets.length > 0 && latestCreatedAt) {
 
 - backfill 抓到至少一条 tweet 时，`fetch_cursors` 中两个时间字段均应被写入（完全无推文的账号时间字段可以为 null）
 - sync 每次成功且有新推文后，`latestTweetCreatedAt` 更新
-- 空页时不尝试读取 `tweets[0]`，不写时间字段
+- 空页时只跳过 `created_at` 字段写入，不影响现有 `lastPaginationToken` / `backfillCompleted` 更新逻辑
 - 值来自 X API 原始 `tweet.created_at`（ISO 8601 格式）
 
 ---
