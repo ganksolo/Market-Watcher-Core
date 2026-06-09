@@ -20,13 +20,15 @@ const USER_FIELDS = [
 async function main(): Promise<void> {
   const handle = requireArg('handle');
 
-  const policyPath = path.resolve('config/fetch-policy.json');
-  const policy: { default: { estimatedUserReadCost: number } } =
-    JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
-
-  const runId = createRun('resolve_user', handle, nowISO());
+  let runId: number | undefined = undefined;
 
   try {
+    const policyPath = path.resolve('config/fetch-policy.json');
+    const policy: { default: { estimatedUserReadCost: number } } =
+      JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
+
+    runId = createRun('resolve_user', handle, nowISO());
+
     const client = createXApiClient();
 
     logger.info({ handle }, 'Resolving account');
@@ -80,11 +82,13 @@ async function main(): Promise<void> {
       else if (err.status === 404) logger.error({ handle }, 'Account not found or not accessible');
     }
 
-    finishRun(runId, {
-      status: 'failed',
-      finishedAt: nowISO(),
-      errorMessage,
-    });
+    if (runId !== undefined) {
+      finishRun(runId, {
+        status: 'failed',
+        finishedAt: nowISO(),
+        errorMessage,
+      });
+    }
 
     logger.error({ err }, 'resolve-account failed');
     process.exit(1);
