@@ -104,9 +104,11 @@ totalFetched = insertedPosts + duplicatedPosts
 // while 循环内，每页请求前执行
 const totalFetched = insertedPosts + duplicatedPosts;
 const remaining = maxPostsPerRun - totalFetched;
+const API_MIN_RESULTS = 5;
 
-if (remaining <= 0) {
-  logger.info({ handle, totalFetched, maxPostsPerRun }, 'Posts limit reached');
+if (remaining <= 0 || remaining < API_MIN_RESULTS) {
+  // remaining <= 0: 已达上限；remaining < 5: 剩余配额不满 X API 最小值，无法发请求
+  logger.info({ handle, totalFetched, maxPostsPerRun, remaining }, 'Posts limit reached');
   finishRun(runId, {
     status: 'stopped_by_posts_limit',
     finishedAt: nowISO(),
@@ -123,12 +125,32 @@ if (remaining <= 0) {
 // 动态裁剪本页请求量
 const actualMaxResults = Math.min(p.maxResultsPerPage, remaining);
 params['max_results'] = String(actualMaxResults);
+
+// 成本检查：基于 actualMaxResults（而非固定 maxResultsPerPage）
+const estimatedCostIfWeGoAhead =
+  (totalEstimatedPostReads + actualMaxResults) * p.estimatedPostReadCost;
+if (estimatedCostIfWeGoAhead > p.maxEstimatedCostPerRun) {
+  logger.info({ handle, estimatedCostIfWeGoAhead, maxEstimatedCostPerRun: p.maxEstimatedCostPerRun }, 'Cost limit reached');
+  finishRun(runId, {
+    status: 'stopped_by_cost_limit',
+    finishedAt: nowISO(),
+    requestedPages: pagesCount,
+    fetchedPosts: totalFetched,
+    insertedPosts,
+    duplicatedPosts,
+    estimatedPostReads: totalEstimatedPostReads,
+    estimatedCostUsd: totalEstimatedPostReads * p.estimatedPostReadCost,
+  });
+  return;
+}
+
 totalEstimatedPostReads += actualMaxResults;
 ```
 
 - `totalEstimatedPostReads` 在循环外初始化为 `0`，每页累加 `actualMaxResults`（替代现有的 `pagesCount * p.maxResultsPerPage`）
-- 成本估算同步修正：`estimatedCostUsd = totalEstimatedPostReads * p.estimatedPostReadCost`
-- `finishRun` 的成功路径也改用 `totalEstimatedPostReads`（现有各 `stopped_by_*` 路径同步修改）
+- 停止条件有两个：`remaining < API_MIN_RESULTS`（剩余配额不足 X API 最小值 5）或 `remaining <= 0`（已满），均记为 `stopped_by_posts_limit`
+- 成本检查移入循环内，基于 `totalEstimatedPostReads + actualMaxResults`（比现有的 `(pagesCount + 1) * maxResultsPerPage` 更精确）；超限时记为 `stopped_by_cost_limit` 并 return，不再执行本页请求
+- `finishRun` 的成功路径也改用 `totalEstimatedPostReads`（现有循环外的成本预检逻辑不变，仍在进入循环前执行）
 
 ### policy 类型声明
 
@@ -149,7 +171,9 @@ const policy: {
 
 - 单次 run 实际处理的推文条数严格不超过 `maxPostsPerRun`
 - 最后一页会主动裁剪 `max_results`，而非等到下页才停止
+- 剩余配额 `< 5`（X API 最小值）时直接停止，不发送非法请求
 - run 状态记录为 `stopped_by_posts_limit`（与现有受控停止状态对称）
+- 成本检查基于 `totalEstimatedPostReads + actualMaxResults`，每页动态计算
 - `estimatedPostReads` 反映实际请求量之和，而非固定的 `pagesCount × maxResultsPerPage`
 
 ---
