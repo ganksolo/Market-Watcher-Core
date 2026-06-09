@@ -27,6 +27,7 @@ export function finishRun(
     estimatedUserReads?: number;
     estimatedCostUsd?: number;
     errorMessage?: string;
+    rawLogPath?: string;
   },
 ): void {
   db.update(fetchRuns).set(patch).where(eq(fetchRuns.id, id)).run();
