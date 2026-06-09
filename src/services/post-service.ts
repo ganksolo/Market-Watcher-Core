@@ -24,12 +24,22 @@ export function upsertPost(params: {
   firstFetchedAt: string;
   lastFetchedAt: string;
 }): { inserted: boolean } {
-  const result = db
+  const insertResult = db
     .insert(xPosts)
     .values(params)
     .onConflictDoNothing()
     .run();
-  return { inserted: result.changes > 0 };
+
+  if (insertResult.changes > 0) {
+    return { inserted: true };
+  }
+
+  db.update(xPosts)
+    .set({ lastFetchedAt: params.lastFetchedAt })
+    .where(eq(xPosts.tweetId, params.tweetId))
+    .run();
+
+  return { inserted: false };
 }
 
 export function getPostsByHandle(
