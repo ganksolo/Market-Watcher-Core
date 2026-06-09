@@ -32,13 +32,17 @@
 | 操作 | 文件 | 改动内容 |
 |---|---|---|
 | 修改 | `src/services/post-service.ts` | upsertPost 改为 INSERT + 失败时 UPDATE lastFetchedAt |
-| 修改 | `src/jobs/backfill-account.ts` | 每页前检查 totalFetched >= maxPostsPerRun |
+| 修改 | `src/jobs/backfill-account.ts` | 页前裁剪 max_results + remaining <= 0 时停止 |
 | 修改 | `src/jobs/sync-account.ts` | 同上 |
 | 修改 | `src/jobs/export-daily-raw.ts` | NDJSON 封装层；Markdown 补 tweet_id、type、完整 created_at |
 
 ---
 
 ## Section 1: upsertPost 冲突策略
+
+### 阶段目标说明
+
+Phase 7b 只补齐 freshness 字段（`lastFetchedAt`），保持低风险。metrics 更新（like/reply/repost 等）不在本阶段处理，延后到后续 phase。这是有意降级：P0 原始目标为"必要时更新 metrics"，本阶段完成其中最小子集。
 
 ### 设计
 
@@ -70,8 +74,8 @@ export function upsertPost(params: { ... }): { inserted: boolean } {
 ### 语义
 
 - `inserted: true` → 新记录，`insertResult.changes === 1`
-- `inserted: false` → 重复，`lastFetchedAt` 已更新
-- `created_at`、`text`、`rawJson` 永不被覆盖
+- `inserted: false` → 重复，`lastFetchedAt` 已更新为本次抓取时间
+- `created_at`、`text`、`rawJson`、metrics 字段永不被覆盖
 - 调用方（backfill / sync）的 `insertedPosts` / `duplicatedPosts` 计数逻辑不变
 
 ### 完成标准
@@ -84,17 +88,24 @@ export function upsertPost(params: { ... }): { inserted: boolean } {
 
 ## Section 2: maxPostsPerRun 检查
 
-### 设计
+### totalFetched 定义
 
-**backfill-account.ts** 和 **sync-account.ts** 在 while 循环顶部，紧跟现有"页数检查"之后，加对称的帖子数量检查：
+```
+totalFetched = insertedPosts + duplicatedPosts
+```
+
+表示"本次 run 从 API 成功读取并处理的推文条数"（无论新增还是重复）。与数据库新增数（`insertedPosts`）和成本计量（`estimatedPostReads`）是不同概念。
+
+### 设计：页前裁剪 + 动态 max_results
+
+**关键思路**：不只是在超限前停止，而是将最后一页的 `max_results` 裁剪到剩余配额，从而保证总量精确不超上限。
 
 ```typescript
-// 读取 maxPostsPerRun（与 maxPagesPerRun 同层）
-const maxPostsPerRun = p.maxPostsPerRun;
-
-// while 循环内，成本检查 + 页数检查 + 新增帖子数检查
+// while 循环内，每页请求前执行
 const totalFetched = insertedPosts + duplicatedPosts;
-if (totalFetched >= maxPostsPerRun) {
+const remaining = maxPostsPerRun - totalFetched;
+
+if (remaining <= 0) {
   logger.info({ handle, totalFetched, maxPostsPerRun }, 'Posts limit reached');
   finishRun(runId, {
     status: 'stopped_by_posts_limit',
@@ -103,12 +114,21 @@ if (totalFetched >= maxPostsPerRun) {
     fetchedPosts: totalFetched,
     insertedPosts,
     duplicatedPosts,
-    estimatedPostReads: pagesCount * p.maxResultsPerPage,
-    estimatedCostUsd: pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost,
+    estimatedPostReads: totalEstimatedPostReads,
+    estimatedCostUsd: totalEstimatedPostReads * p.estimatedPostReadCost,
   });
   return;
 }
+
+// 动态裁剪本页请求量
+const actualMaxResults = Math.min(p.maxResultsPerPage, remaining);
+params['max_results'] = String(actualMaxResults);
+totalEstimatedPostReads += actualMaxResults;
 ```
+
+- `totalEstimatedPostReads` 在循环外初始化为 `0`，每页累加 `actualMaxResults`（替代现有的 `pagesCount * p.maxResultsPerPage`）
+- 成本估算同步修正：`estimatedCostUsd = totalEstimatedPostReads * p.estimatedPostReadCost`
+- `finishRun` 的成功路径也改用 `totalEstimatedPostReads`（现有各 `stopped_by_*` 路径同步修改）
 
 ### policy 类型声明
 
@@ -127,9 +147,10 @@ const policy: {
 
 ### 完成标准
 
-- 单次 run 实际抓取帖子数不会超过 `maxPostsPerRun`
+- 单次 run 实际处理的推文条数严格不超过 `maxPostsPerRun`
+- 最后一页会主动裁剪 `max_results`，而非等到下页才停止
 - run 状态记录为 `stopped_by_posts_limit`（与现有受控停止状态对称）
-- 第一页前 `totalFetched = 0`，不会误触发
+- `estimatedPostReads` 反映实际请求量之和，而非固定的 `pagesCount × maxResultsPerPage`
 
 ---
 
@@ -140,23 +161,35 @@ const policy: {
 每行改为从 DB 列构建的封装对象，`raw_json` 作为嵌套字段：
 
 ```typescript
-const ndjsonContent = posts.map(p => JSON.stringify({
-  tweet_id: p.tweetId,
-  author_handle: p.authorHandle,
-  created_at: p.createdAt,
-  text: p.text,
-  url: p.url ?? `https://x.com/${p.authorHandle}/status/${p.tweetId}`,
-  public_metrics: {
-    like_count: p.likeCount,
-    reply_count: p.replyCount,
-    retweet_count: p.repostCount,
-    quote_count: p.quoteCount,
-    bookmark_count: p.bookmarkCount,
-    impression_count: p.impressionCount,
-  },
-  raw_json: JSON.parse(p.rawJson),
-})).join('\n') + '\n';
+const ndjsonContent = posts.map(p => {
+  let parsedRaw: unknown;
+  try {
+    parsedRaw = JSON.parse(p.rawJson);
+  } catch {
+    throw new Error(`Failed to parse rawJson for tweet ${p.tweetId}`);
+  }
+  return JSON.stringify({
+    tweet_id: p.tweetId,
+    author_handle: p.authorHandle,
+    created_at: p.createdAt,
+    text: p.text,
+    url: p.url ?? `https://x.com/${p.authorHandle}/status/${p.tweetId}`,
+    type: p.referencedType ?? 'tweet',
+    referenced_tweet_id: p.referencedTweetId ?? null,
+    public_metrics: {
+      like_count: p.likeCount,
+      reply_count: p.replyCount,
+      retweet_count: p.repostCount,
+      quote_count: p.quoteCount,
+      bookmark_count: p.bookmarkCount,
+      impression_count: p.impressionCount,
+    },
+    raw_json: parsedRaw,
+  });
+}).join('\n') + '\n';
 ```
+
+`JSON.parse(p.rawJson)` 解析失败时抛出错误，由外层 `try-catch` 捕获并 `process.exit(1)`（与现有导出错误处理一致）。DB 内 `rawJson` 由 API 响应写入，正常情况下不会损坏，此处做显式保护。
 
 ### Markdown 格式
 
@@ -177,7 +210,7 @@ lines.push(`- ${p.createdAt} \`${p.tweetId}\` [↗](${url}) [${type}] ${text}`);
 
 ### 完成标准
 
-- NDJSON 每行是合法 JSON，包含 `tweet_id`、`author_handle`、`created_at`、`text`、`url`、`public_metrics`、`raw_json`
+- NDJSON 每行是合法 JSON，包含 `tweet_id`、`author_handle`、`created_at`、`text`、`url`、`type`、`referenced_tweet_id`、`public_metrics`、`raw_json`
 - Markdown 每条包含完整时间戳、tweet_id、url、type、text
 - Agent 可直接读取 NDJSON，无需二次拼装
 - 旧导出文件不受影响（只影响后续新导出）
