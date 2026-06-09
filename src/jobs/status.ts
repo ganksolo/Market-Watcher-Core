@@ -3,7 +3,7 @@ import { eq, count } from 'drizzle-orm';
 import { resolveHandle } from '../utils/cli';
 import { getWatchAccount } from '../services/account-service';
 import { getCursor } from '../services/cursor-service';
-import { getLatestRun } from '../services/run-log-service';
+import { getLatestRun, getLatestFailedRun } from '../services/run-log-service';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
 
@@ -15,6 +15,7 @@ function main(): void {
   const account = getWatchAccount(handle);
   const cursor = getCursor(handle);
   const latestRun = getLatestRun(handle);
+  const failedRun = getLatestFailedRun(handle);
 
   const countResult = db
     .select({ value: count() })
@@ -30,23 +31,32 @@ function main(): void {
         ? 'in progress'
         : 'not started';
 
+  const latestTime = cursor?.latestTweetCreatedAt ? ` (${cursor.latestTweetCreatedAt})` : '';
+  const oldestTime = cursor?.oldestTweetCreatedAt ? ` (${cursor.oldestTweetCreatedAt})` : '';
+
   const lines = [
     `Account:   @${handle}`,
     `User ID:   ${account?.xUserId ?? 'not resolved'}`,
     `Posts:     ${postCount} total`,
     `Backfill:  ${cursor ? backfillStatus : 'not started'}`,
-    `Latest:    ${cursor?.latestTweetId ?? 'n/a'}`,
-    `Oldest:    ${cursor?.oldestTweetId ?? 'n/a'}`,
+    `Latest:    ${cursor?.latestTweetId ?? 'n/a'}${latestTime}`,
+    `Oldest:    ${cursor?.oldestTweetId ?? 'n/a'}${oldestTime}`,
     '',
   ];
 
   if (latestRun) {
+    const cost =
+      latestRun.estimatedCostUsd != null
+        ? ` · $${latestRun.estimatedCostUsd.toFixed(2)}`
+        : '';
     lines.push(
-      `Last run:  ${latestRun.runType} · ${latestRun.status} · ${latestRun.insertedPosts ?? 0} inserted · ${latestRun.startedAt}`,
+      `Last run:  ${latestRun.runType} · ${latestRun.status} · ${latestRun.insertedPosts ?? 0} inserted · ${latestRun.startedAt}${cost}`,
     );
   } else {
     lines.push('Last run:  no runs yet');
   }
+
+  lines.push(`Last err:  ${failedRun?.errorMessage ?? 'n/a'}`);
 
   console.log(lines.join('\n'));
 }
