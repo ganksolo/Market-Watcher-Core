@@ -16,3 +16,18 @@ export function getCursor(handle: string) {
     .where(eq(fetchCursors.accountHandle, handle))
     .get();
 }
+
+export function updateCursor(
+  handle: string,
+  patch: {
+    latestTweetId?: string;
+    latestTweetCreatedAt?: string;
+    oldestTweetId?: string;
+    oldestTweetCreatedAt?: string;
+    lastPaginationToken?: string | null;
+    backfillCompleted?: number;
+    updatedAt: string;
+  },
+): void {
+  db.update(fetchCursors).set(patch).where(eq(fetchCursors.accountHandle, handle)).run();
+}
