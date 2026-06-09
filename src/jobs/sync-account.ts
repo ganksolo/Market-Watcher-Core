@@ -76,6 +76,7 @@ async function main(): Promise<void> {
     let duplicatedPosts = 0;
     let newestId: string | undefined = undefined;
     let currentPaginationToken: string | undefined;
+    let firstPageTweets: XTweet[] = [];
 
     logger.info({ handle, xUserId, maxPages, sinceId: cursor.latestTweetId }, 'Starting sync');
 
@@ -144,6 +145,10 @@ async function main(): Promise<void> {
         newestId = meta.newest_id;
       }
 
+      if (pagesCount === 0) {
+        firstPageTweets = tweets;
+      }
+
       const pageNow = nowISO();
       for (const tweet of tweets) {
         if (!p.includeQuotes && tweet.referenced_tweets?.[0]?.type === 'quoted') continue;
@@ -187,7 +192,12 @@ async function main(): Promise<void> {
     }
 
     if (newestId) {
-      updateCursor(handle, { latestTweetId: newestId, updatedAt: nowISO() });
+      const latestCreatedAt = firstPageTweets[0]?.created_at;
+      updateCursor(handle, {
+        latestTweetId: newestId,
+        ...(latestCreatedAt ? { latestTweetCreatedAt: latestCreatedAt } : {}),
+        updatedAt: nowISO(),
+      });
     }
 
     const finalCostUsd = pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost;
