@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     default: {
       maxResultsPerPage: number;
       maxPagesPerRun: number;
+      maxPostsPerRun: number;
       includeReplies: boolean;
       includeRetweets: boolean;
       includeQuotes: boolean;
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
 
   const p = policy.default;
   const maxPages = maxPagesArg ? parseInt(maxPagesArg, 10) : p.maxPagesPerRun;
+  const maxPostsPerRun = p.maxPostsPerRun;
 
   const cursor = getCursor(handle);
   if (cursor?.backfillCompleted === 1) {
@@ -67,6 +69,7 @@ async function main(): Promise<void> {
     let pagesCount = 0;
     let insertedPosts = 0;
     let duplicatedPosts = 0;
+    let totalEstimatedPostReads = 0;
     let currentPaginationToken: string | undefined = cursor?.lastPaginationToken ?? undefined;
     let isFirstPage = !currentPaginationToken;
 
@@ -75,19 +78,43 @@ async function main(): Promise<void> {
     initCursor(handle, nowISO());
 
     while (true) {
-      const estimatedCostIfWeGoAhead = (pagesCount + 1) * p.maxResultsPerPage * p.estimatedPostReadCost;
+      // Posts limit check
+      const totalFetched = insertedPosts + duplicatedPosts;
+      const remaining = maxPostsPerRun - totalFetched;
+      // X API GET /2/users/:id/tweets requires max_results >= 5
+      const API_MIN_RESULTS = 5;
+      if (remaining <= 0 || remaining < API_MIN_RESULTS) {
+        logger.info({ handle, totalFetched, maxPostsPerRun }, 'Posts limit reached');
+        finishRun(runId, {
+          status: 'stopped_by_posts_limit',
+          finishedAt: nowISO(),
+          requestedPages: pagesCount,
+          fetchedPosts: totalFetched,
+          insertedPosts,
+          duplicatedPosts,
+          estimatedPostReads: totalEstimatedPostReads,
+          estimatedCostUsd: totalEstimatedPostReads * p.estimatedPostReadCost,
+        });
+        return;
+      }
+
+      // Compute this page's request size (trimmed to remaining quota)
+      const actualMaxResults = Math.min(p.maxResultsPerPage, remaining);
+
+      // Cost check (per-page, based on actualMaxResults)
+      const estimatedCostIfWeGoAhead =
+        (totalEstimatedPostReads + actualMaxResults) * p.estimatedPostReadCost;
       if (estimatedCostIfWeGoAhead > p.maxEstimatedCostPerRun) {
-        const estimatedCostSoFar = pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost;
-        logger.warn({ handle, pagesCount, estimatedCostSoFar }, 'Cost limit reached');
+        logger.warn({ handle, estimatedCostIfWeGoAhead, maxEstimatedCostPerRun: p.maxEstimatedCostPerRun }, 'Cost limit reached');
         finishRun(runId, {
           status: 'stopped_by_cost_limit',
           finishedAt: nowISO(),
           requestedPages: pagesCount,
-          fetchedPosts: insertedPosts + duplicatedPosts,
+          fetchedPosts: totalFetched,
           insertedPosts,
           duplicatedPosts,
-          estimatedPostReads: pagesCount * p.maxResultsPerPage,
-          estimatedCostUsd: estimatedCostSoFar,
+          estimatedPostReads: totalEstimatedPostReads,
+          estimatedCostUsd: totalEstimatedPostReads * p.estimatedPostReadCost,
         });
         return;
       }
@@ -98,18 +125,21 @@ async function main(): Promise<void> {
           status: 'stopped_by_page_limit',
           finishedAt: nowISO(),
           requestedPages: pagesCount,
-          fetchedPosts: insertedPosts + duplicatedPosts,
+          fetchedPosts: totalFetched,
           insertedPosts,
           duplicatedPosts,
-          estimatedPostReads: pagesCount * p.maxResultsPerPage,
-          estimatedCostUsd: pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost,
+          estimatedPostReads: totalEstimatedPostReads,
+          estimatedCostUsd: totalEstimatedPostReads * p.estimatedPostReadCost,
         });
         return;
       }
 
+      // Commit to this page
+      totalEstimatedPostReads += actualMaxResults;
+
       const params: Record<string, string> = {
         'tweet.fields': TWEET_FIELDS,
-        max_results: String(p.maxResultsPerPage),
+        max_results: String(actualMaxResults),
       };
       if (excludeParts.length) params.exclude = excludeParts.join(',');
       if (currentPaginationToken) params.pagination_token = currentPaginationToken;
@@ -188,7 +218,7 @@ async function main(): Promise<void> {
       await sleep(p.sleepMsBetweenRequests);
     }
 
-    const finalCostUsd = pagesCount * p.maxResultsPerPage * p.estimatedPostReadCost;
+    const finalCostUsd = totalEstimatedPostReads * p.estimatedPostReadCost;
     finishRun(runId, {
       status: 'success',
       finishedAt: nowISO(),
@@ -196,7 +226,7 @@ async function main(): Promise<void> {
       fetchedPosts: insertedPosts + duplicatedPosts,
       insertedPosts,
       duplicatedPosts,
-      estimatedPostReads: pagesCount * p.maxResultsPerPage,
+      estimatedPostReads: totalEstimatedPostReads,
       estimatedCostUsd: finalCostUsd,
     });
 
