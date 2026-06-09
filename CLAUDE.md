@@ -48,17 +48,17 @@ logs/fetch-runs/              → run logs
 |---|---|
 | `src/db/schema.ts` | Drizzle table definitions (source of truth for shape) |
 | `src/db/migrate.ts` | Standalone migration runner (raw SQL `CREATE TABLE IF NOT EXISTS`) |
-| `src/db/index.ts` | Drizzle `db` singleton (not yet created) |
-| `src/clients/x-api-client.ts` | X API v2 HTTP client with 429 retry (not yet created) |
-| `src/services/` | One file per concern: account, post, cursor, run-log, export (not yet created) |
-| `src/jobs/` | One file per CLI command — entry points called by `pnpm` scripts (not yet created) |
+| `src/db/index.ts` | Drizzle `db` singleton |
+| `src/clients/x-api-client.ts` | X API v2 HTTP client with 429 retry |
+| `src/services/` | account, post, cursor, run-log (export 待实现) |
+| `src/jobs/` | resolve-account, backfill-account 已实现；sync, export, status 待实现 |
 | `src/utils/` | `logger` (pino), `cli` (arg parsing), `cost`, `sleep`, `date` |
 
 ### Phases — what exists vs. what is needed
 
-**Phase 1 (done):** schema, migrate, utils, config files.
+**Phase 1–4 (done):** schema, migrate, utils, clients, services (account/post/cursor/run-log), jobs (resolve-account, backfill-account).
 
-**Phases 2–7 (not implemented):** `src/clients/`, `src/services/`, `src/jobs/` directories exist but are empty.
+**Phase 5+ (待实现):** sync-account, export-daily, status job。
 
 ### Key constraints to preserve
 
@@ -75,7 +75,7 @@ logs/fetch-runs/              → run logs
 
 ## 当前进度
 
-Phase 1、2、3 已完成。下一步：Phase 4 — `post-service` + `backfill-account` job。
+Phase 1、2、3、4 已完成。下一步：Phase 5 — `sync-account` job（增量同步，拉取 `latestTweetId` 之后的新推文）。
 
 **Phase 2 产物：**
 - `src/db/index.ts` — Drizzle `db` 单例（无 dotenv，由 job 入口负责加载 env）
@@ -84,9 +84,14 @@ Phase 1、2、3 已完成。下一步：Phase 4 — `post-service` + `backfill-a
 
 **Phase 3 产物：**
 - `src/services/account-service.ts` — `upsertWatchAccount`, `getWatchAccount`, `upsertXUser`
-- `src/services/cursor-service.ts` — `initCursor`, `getCursor`（Phase 4 需补充 `updateCursor`）
+- `src/services/cursor-service.ts` — `initCursor`, `getCursor`, `updateCursor`
 - `src/services/run-log-service.ts` — `createRun`, `finishRun`, `getLatestRun`
 - `src/jobs/resolve-account.ts` — `pnpm x:resolve --handle <handle>`
+
+**Phase 4 产物：**
+- `src/services/post-service.ts` — `upsertPost`（ON CONFLICT DO NOTHING，返回 `{inserted: boolean}`）、`getPostsByHandle`
+- `src/services/cursor-service.ts` — 新增 `updateCursor(handle, patch)`
+- `src/jobs/backfill-account.ts` — `pnpm x:backfill --handle <handle> --max-pages <n>`（分页拉取历史 timeline，断点续传，成本保护）
 
 ### Environment
 
