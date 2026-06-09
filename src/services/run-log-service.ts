@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db';
 import { fetchRuns } from '../db/schema';
 
@@ -38,6 +38,16 @@ export function getLatestRun(handle: string) {
     .select()
     .from(fetchRuns)
     .where(eq(fetchRuns.accountHandle, handle))
+    .orderBy(desc(fetchRuns.id))
+    .limit(1)
+    .get();
+}
+
+export function getLatestFailedRun(handle: string) {
+  return db
+    .select()
+    .from(fetchRuns)
+    .where(and(eq(fetchRuns.accountHandle, handle), eq(fetchRuns.status, 'failed')))
     .orderBy(desc(fetchRuns.id))
     .limit(1)
     .get();
