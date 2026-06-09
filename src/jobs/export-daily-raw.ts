@@ -33,38 +33,43 @@ function main(): void {
     return;
   }
 
-  const ndjsonDir = path.resolve(`exports/raw/${handle}`);
-  const mdDir = path.resolve(`exports/daily/${handle}`);
-  fs.mkdirSync(ndjsonDir, { recursive: true });
-  fs.mkdirSync(mdDir, { recursive: true });
+  try {
+    const ndjsonDir = path.resolve(`exports/raw/${handle}`);
+    const mdDir = path.resolve(`exports/daily/${handle}`);
+    fs.mkdirSync(ndjsonDir, { recursive: true });
+    fs.mkdirSync(mdDir, { recursive: true });
 
-  const ndjsonPath = path.join(ndjsonDir, `${date}.ndjson`);
-  const mdPath = path.join(mdDir, `${date}.md`);
+    const ndjsonPath = path.join(ndjsonDir, `${date}.ndjson`);
+    const mdPath = path.join(mdDir, `${date}.md`);
 
-  const ndjsonContent = posts.map(p => p.rawJson).join('\n') + '\n';
-  fs.writeFileSync(ndjsonPath, ndjsonContent, 'utf-8');
+    const ndjsonContent = posts.map(p => p.rawJson).join('\n') + '\n';
+    fs.writeFileSync(ndjsonPath, ndjsonContent, 'utf-8');
 
-  const lines: string[] = [`# @${handle} — ${date} (${posts.length} posts)`, ''];
-  for (const post of posts) {
-    const time = post.createdAt.slice(11, 16);
-    const rawText = post.text.replace(/\n/g, ' ');
-    const text = rawText.length > 280 ? rawText.slice(0, 277) + '...' : rawText;
-    const url = post.url ?? `https://x.com/${handle}/status/${post.tweetId}`;
-    lines.push(`- ${time} [↗](${url}) ${text}`);
+    const lines: string[] = [`# @${handle} — ${date} (${posts.length} posts)`, ''];
+    for (const post of posts) {
+      const time = post.createdAt.slice(11, 16);
+      const rawText = post.text.replace(/\n/g, ' ');
+      const text = rawText.length > 280 ? rawText.slice(0, 277) + '...' : rawText;
+      const url = post.url ?? `https://x.com/${handle}/status/${post.tweetId}`;
+      lines.push(`- ${time} [↗](${url}) ${text}`);
+    }
+    fs.writeFileSync(mdPath, lines.join('\n') + '\n', 'utf-8');
+
+    db.insert(rawArchives)
+      .values({
+        accountHandle: handle,
+        archiveDate: date,
+        filePath: ndjsonPath,
+        postCount: posts.length,
+        createdAt: nowISO(),
+      })
+      .run();
+
+    logger.info({ handle, date, postCount: posts.length, ndjsonPath, mdPath }, 'Export complete');
+  } catch (err) {
+    logger.error({ err }, 'export-daily-raw failed');
+    process.exit(1);
   }
-  fs.writeFileSync(mdPath, lines.join('\n') + '\n', 'utf-8');
-
-  db.insert(rawArchives)
-    .values({
-      accountHandle: handle,
-      archiveDate: date,
-      filePath: ndjsonPath,
-      postCount: posts.length,
-      createdAt: nowISO(),
-    })
-    .run();
-
-  logger.info({ handle, date, postCount: posts.length, ndjsonPath, mdPath }, 'Export complete');
 }
 
 main();
