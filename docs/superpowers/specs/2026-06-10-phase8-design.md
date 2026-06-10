@@ -58,7 +58,7 @@ export function checkAccountEnabled(handle: string): void {
   const config: { accounts: Array<{ handle: string; enabled: boolean }> } =
     JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
   const account = config.accounts.find(
-    a => a.handle.replace(/^@/, '') === handle,
+    a => normalizeHandle(a.handle) === handle,
   );
   if (account && account.enabled === false) {
     console.error(`Account @${handle} is disabled in config/accounts.json — aborting`);
