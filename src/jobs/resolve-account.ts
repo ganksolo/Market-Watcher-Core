@@ -1,10 +1,11 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { resolveHandle } from '../utils/cli';
+import { resolveHandle, checkAccountEnabled } from '../utils/cli';
 import { logger } from '../utils/logger';
 import { nowISO } from '../utils/date';
-import { createXApiClient, ApiError } from '../clients/x-api-client';
+import { classifyError } from '../utils/classify-error';
+import { createXApiClient } from '../clients/x-api-client';
 import type { XApiResponse, XUser } from '../clients/x-api-types';
 import { upsertWatchAccount, upsertXUser } from '../services/account-service';
 import { initCursor } from '../services/cursor-service';
@@ -19,6 +20,7 @@ const USER_FIELDS = [
 
 async function main(): Promise<void> {
   const handle = resolveHandle();
+  checkAccountEnabled(handle);
 
   let runId: number | undefined = undefined;
 
@@ -75,12 +77,8 @@ async function main(): Promise<void> {
 
     logger.info({ handle, xUserId: user.id }, 'Resolved account successfully');
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-
-    if (err instanceof ApiError) {
-      if (err.status === 401) logger.error('X_BEARER_TOKEN is invalid or expired');
-      else if (err.status === 404) logger.error({ handle }, 'Account not found or not accessible');
-    }
+    const { logMessage, errorMessage } = classifyError(err, { handle });
+    if (logMessage) logger.error({ handle }, logMessage);
 
     if (runId !== undefined) {
       finishRun(runId, {
