@@ -72,7 +72,7 @@ export function checkAccountEnabled(handle: string): void {
 - handle 不在配置中 → 不拦截（允许外部账号）
 - handle 在配置中且 `enabled: true`（或字段缺失）→ 不拦截
 
-三个 job 在 `resolveHandle()` 之后紧接着调用：
+三个会触发 API 抓取的 job（resolve-account / backfill-account / sync-account）在 `resolveHandle()` 之后紧接着调用。export-daily-raw 和 status 是只读操作，不接入（这两个 job 即使对 disabled 账号执行也无副作用）：
 
 ```typescript
 const handle = resolveHandle();
@@ -83,7 +83,8 @@ checkAccountEnabled(handle);
 
 ### 完成标准
 
-- `enabled: false` 的账号执行任何 job 均 exit 1 并打印明确原因
+- `enabled: false` 的账号执行 resolve / backfill / sync 均 exit 1 并打印明确原因
+- export / status 不受 enabled 状态影响（只读，无需拦截）
 - 不在配置中的账号不受影响
 - `--handle @xxx` 和 `--handle xxx` 的规范化不影响判断（compare 时统一去掉 `@`）
 
@@ -160,6 +161,22 @@ export function classifyError(
     };
   }
 
+  // 配置文件缺失 / 无法读取（ENOENT from fs.readFileSync）
+  if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+    return {
+      logMessage: `Config file not found: ${err.message}`,
+      errorMessage: `config_error: ${err.message}`,
+    };
+  }
+
+  // 数据库错误（better-sqlite3 抛出的错误名称为 'SqliteError'）
+  if (err instanceof Error && err.name === 'SqliteError') {
+    return {
+      logMessage: `Database error: ${err.message}`,
+      errorMessage: `db_error: ${err.message}`,
+    };
+  }
+
   const message = err instanceof Error ? err.message : String(err);
   return {
     logMessage: '',
@@ -173,7 +190,7 @@ export function classifyError(
 ```typescript
 } catch (err) {
   const { logMessage, errorMessage } = classifyError(err, { handle });
-  if (logMessage) logger.error(logMessage);
+  if (logMessage) logger.error({ handle }, logMessage);
 
   if (runId !== undefined) {
     finishRun(runId, {
@@ -189,13 +206,13 @@ export function classifyError(
 }
 ```
 
-`logger.error({ err }, ...)` 保留作为兜底，确保 stack trace 可见。
+`logger.error({ err }, ...)` 保留作为兜底，确保 stack trace 可见。`if (logMessage) logger.error({ handle }, logMessage)` 带上 handle 上下文，方便定位是哪个账号触发的错误。
 
 ### 完成标准
 
 - 401 / 403 / 404 / 429 / 5xx 各有明确 `logMessage`
-- 网络错误有明确 `logMessage`
-- `errorMessage` 写入 `fetch_runs.error_message`，格式统一
+- 网络错误、配置文件缺失、数据库错误各有明确 `logMessage`
+- `errorMessage` 写入 `fetch_runs.error_message`，格式统一（`error_type: detail`）
 - 不在日志中打印 `X_BEARER_TOKEN`
 
 ---
@@ -285,17 +302,17 @@ while (true) {
 }
 ```
 
-2. 在 `finishRun(success)` 之后写入：
+2. 在 `finishRun(success)` **之前**写入：
 
 ```typescript
-finishRun(runId, { status: 'success', ... });
-
 if (isBackfillComplete) {
   updateCursor(handle, { backfillCompleted: 1, updatedAt: nowISO() });
 }
+
+finishRun(runId, { status: 'success', ... });
 ```
 
-语义：`backfillCompleted` 只在 run 成功结束后才写入，确保 cursor 和 run 状态一致。
+语义：`backfillCompleted` 写入失败会抛出异常，被外层 catch 捕获并将 run 标记为 failed，cursor 也不会被标记完成 — 两者状态一致。反之，cursor 完成后 `finishRun` 才执行，即使 `finishRun` 失败，cursor 已经正确记录完成状态，下次运行会直接跳过（这比"run=success 但 cursor 未完成"更安全）。
 
 ### export 无数据日期
 
