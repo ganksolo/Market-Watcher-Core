@@ -69,3 +69,11 @@ export function upsertXUser(params: {
     })
     .run();
 }
+
+export function getXUserByUsername(username: string) {
+  return db
+    .select()
+    .from(xUsers)
+    .where(eq(xUsers.username, username))
+    .get();
+}

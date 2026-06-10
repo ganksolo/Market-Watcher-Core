@@ -18,6 +18,14 @@ const sqlite = new Database(resolved);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 
+function addColumnIfMissing(table: string, column: string, definition: string) {
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const exists = columns.some(col => col.name === column);
+  if (!exists) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS watch_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +90,8 @@ sqlite.exec(`
     oldest_tweet_created_at TEXT,
     last_pagination_token TEXT,
     backfill_completed INTEGER DEFAULT 0,
+    backfill_suspicious INTEGER DEFAULT 0,
+    backfill_warning TEXT,
     updated_at TEXT NOT NULL
   );
 
@@ -112,6 +122,9 @@ sqlite.exec(`
     created_at TEXT NOT NULL
   );
 `);
+
+addColumnIfMissing('fetch_cursors', 'backfill_suspicious', 'INTEGER DEFAULT 0');
+addColumnIfMissing('fetch_cursors', 'backfill_warning', 'TEXT');
 
 console.log('Migration complete: all 6 tables created successfully');
 console.log(`Database: ${resolved}`);

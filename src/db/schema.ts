@@ -63,6 +63,8 @@ export const fetchCursors = sqliteTable('fetch_cursors', {
   oldestTweetCreatedAt: text('oldest_tweet_created_at'),
   lastPaginationToken: text('last_pagination_token'),
   backfillCompleted: integer('backfill_completed').default(0),
+  backfillSuspicious: integer('backfill_suspicious').default(0),
+  backfillWarning: text('backfill_warning'),
   updatedAt: text('updated_at').notNull(),
 });
 

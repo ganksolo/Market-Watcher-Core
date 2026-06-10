@@ -2,11 +2,13 @@ import dotenv from 'dotenv';
 import { eq, count } from 'drizzle-orm';
 import { resolveHandle } from '../utils/cli';
 import { getWatchAccount } from '../services/account-service';
-import { repairCursorCoverageIfMissing } from '../services/cursor-service';
-import { getLatestRun, getLatestFailedRun } from '../services/run-log-service';
+import { markCursorBackfillCoverage, repairCursorCoverageIfMissing } from '../services/cursor-service';
+import { getLatestRun, getLatestFailedRun, getLatestRunByType } from '../services/run-log-service';
+import { assessBackfillCoverage } from '../services/coverage-service';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
 import { prettifyErrorMessage } from '../utils/format';
+import { nowISO } from '../utils/date';
 
 dotenv.config();
 
@@ -17,6 +19,7 @@ function main(): void {
   const cursor = repairCursorCoverageIfMissing(handle);
   const latestRun = getLatestRun(handle);
   const failedRun = getLatestFailedRun(handle);
+  const latestBackfillRun = getLatestRunByType(handle, 'backfill');
 
   const countResult = db
     .select({ value: count() })
@@ -24,6 +27,22 @@ function main(): void {
     .where(eq(xPosts.authorHandle, handle))
     .get();
   const postCount = countResult?.value ?? 0;
+  const coverage = assessBackfillCoverage({
+    handle,
+    requestedPages: latestBackfillRun?.requestedPages ?? 0,
+    endedWithoutNextToken: cursor?.backfillCompleted === 1,
+  });
+
+  if (cursor && coverage.suspicious && cursor.backfillSuspicious !== 1) {
+    markCursorBackfillCoverage({
+      handle,
+      suspicious: true,
+      warning: coverage.warning,
+      updatedAt: nowISO(),
+    });
+    cursor.backfillSuspicious = 1;
+    cursor.backfillWarning = coverage.warning;
+  }
 
   const backfillStatus =
     cursor?.backfillCompleted === 1
@@ -44,6 +63,12 @@ function main(): void {
     `Oldest:    ${cursor?.oldestTweetId ?? 'n/a'}${oldestTime}`,
     '',
   ];
+
+  if (cursor?.backfillSuspicious === 1 || coverage.suspicious) {
+    lines.push('Coverage: suspicious');
+    lines.push(`Coverage note: ${cursor?.backfillWarning ?? coverage.warning ?? 'pagination ended early'}`);
+    lines.push('');
+  }
 
   if (latestRun) {
     const cost =

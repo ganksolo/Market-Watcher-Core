@@ -27,6 +27,8 @@ export function updateCursor(
     oldestTweetCreatedAt?: string;
     lastPaginationToken?: string | null;
     backfillCompleted?: number;
+    backfillSuspicious?: number;
+    backfillWarning?: string | null;
     updatedAt: string;
   },
 ): void {
@@ -69,4 +71,17 @@ export function repairCursorCoverageIfMissing(handle: string) {
   }
 
   return cursor;
+}
+
+export function markCursorBackfillCoverage(params: {
+  handle: string;
+  suspicious: boolean;
+  warning: string | null;
+  updatedAt: string;
+}) {
+  updateCursor(params.handle, {
+    backfillSuspicious: params.suspicious ? 1 : 0,
+    backfillWarning: params.warning,
+    updatedAt: params.updatedAt,
+  });
 }

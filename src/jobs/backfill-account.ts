@@ -9,8 +9,9 @@ import { sleep } from '../utils/sleep';
 import { createXApiClient } from '../clients/x-api-client';
 import type { XApiListResponse, XTweet } from '../clients/x-api-types';
 import { getWatchAccount } from '../services/account-service';
-import { getCursor, initCursor, updateCursor } from '../services/cursor-service';
+import { getCursor, initCursor, updateCursor, markCursorBackfillCoverage } from '../services/cursor-service';
 import { upsertPost } from '../services/post-service';
+import { assessBackfillCoverage } from '../services/coverage-service';
 import { createRun, finishRun } from '../services/run-log-service';
 
 dotenv.config();
@@ -231,8 +232,28 @@ async function main(): Promise<void> {
       await sleep(p.sleepMsBetweenRequests);
     }
 
+    const coverage = assessBackfillCoverage({
+      handle,
+      requestedPages: pagesCount,
+      endedWithoutNextToken: isBackfillComplete,
+    });
+
     if (isBackfillComplete) {
       updateCursor(handle, { backfillCompleted: 1, updatedAt: nowISO() });
+    }
+
+    markCursorBackfillCoverage({
+      handle,
+      suspicious: coverage.suspicious,
+      warning: coverage.warning,
+      updatedAt: nowISO(),
+    });
+
+    if (coverage.suspicious && coverage.warning) {
+      logger.warn(
+        { handle, warning: coverage.warning, localPosts: coverage.localPosts, tweetCount: coverage.tweetCount },
+        'Backfill coverage looks suspicious',
+      );
     }
 
     const finalCostUsd = totalEstimatedPostReads * p.estimatedPostReadCost;

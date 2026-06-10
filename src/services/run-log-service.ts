@@ -52,3 +52,13 @@ export function getLatestFailedRun(handle: string) {
     .limit(1)
     .get();
 }
+
+export function getLatestRunByType(handle: string, runType: string) {
+  return db
+    .select()
+    .from(fetchRuns)
+    .where(and(eq(fetchRuns.accountHandle, handle), eq(fetchRuns.runType, runType)))
+    .orderBy(desc(fetchRuns.id))
+    .limit(1)
+    .get();
+}

@@ -1,4 +1,4 @@
-import { eq, and, like, asc, desc } from 'drizzle-orm';
+import { eq, and, like, asc, desc, count } from 'drizzle-orm';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
 
@@ -108,4 +108,13 @@ export function getCoverageBoundsByHandle(handle: string): {
     oldestTweetId: oldest?.tweetId ?? null,
     oldestTweetCreatedAt: oldest?.createdAt ?? null,
   };
+}
+
+export function getPostCountByHandle(handle: string): number {
+  const row = db
+    .select({ value: count() })
+    .from(xPosts)
+    .where(eq(xPosts.authorHandle, handle))
+    .get();
+  return row?.value ?? 0;
 }
