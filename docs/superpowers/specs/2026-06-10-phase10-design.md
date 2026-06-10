@@ -28,7 +28,7 @@
 - `src/jobs/resolve-account.ts` — 读取 label 并传入 `upsertWatchAccount`
 - `src/utils/format.ts` — 新增（提取 `prettifyErrorMessage` 纯函数）
 - `src/jobs/status.ts` — 导入并应用 `prettifyErrorMessage` 于 Last err 输出
-- `src/utils/__tests__/format.test.ts` — 新增（5 个转换用例）
+- `src/utils/__tests__/format.test.ts` — 新增（7 个转换用例）
 
 ---
 
@@ -42,7 +42,7 @@
 | 修改 | `src/jobs/resolve-account.ts` | 读 label，传给 `upsertWatchAccount` |
 | 新增 | `src/utils/format.ts` | `prettifyErrorMessage(raw)` 纯函数 |
 | 修改 | `src/jobs/status.ts` | 导入 `prettifyErrorMessage`，Last err 行应用 |
-| 新增 | `src/utils/__tests__/format.test.ts` | 5 个转换用例 |
+| 新增 | `src/utils/__tests__/format.test.ts` | 7 个转换用例（含 DB/API 缩写 + n/a 直通） |
 
 ---
 
@@ -70,6 +70,8 @@ db.update(xPosts)
 ```
 
 `firstFetchedAt` 不在 `.set()` 中，保持首次抓取值不变。函数签名和返回值（`{ inserted: boolean }`）不变。
+
+**`url` 不更新**：`url` 由 `tweet_id` + `handle` 静态推导（`https://x.com/{handle}/status/{tweet_id}`），tweet_id 稳定时 url 不会改变，无需纳入 duplicate 更新集。
 
 ### 完成标准
 
@@ -99,26 +101,34 @@ export function getLabelFromConfig(handle: string): string | undefined {
 
 `fs` 和 `path` 已在 `cli.ts` 中导入，无新依赖。账号不在配置中或无 `label` 字段时返回 `undefined`。
 
-**`src/services/account-service.ts` — 修改 `upsertWatchAccount`：**
+**`src/services/account-service.ts` — 扩展现有签名 `upsertWatchAccount(handle, xUserId, now)` 增加第四个可选参数：**
 
 ```typescript
 export function upsertWatchAccount(
   handle: string,
   xUserId: string,
   now: string,
-  label?: string,
+  label?: string,          // 新增，其余参数不变
 ): void {
   db.insert(watchAccounts)
-    .values({ accountHandle: handle, xUserId, label: label ?? null, updatedAt: now, createdAt: now })
+    .values({
+      handle,
+      xUserId,
+      label: label ?? null,
+      firstSeenAt: now,
+      lastCheckedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
     .onConflictDoUpdate({
-      target: watchAccounts.accountHandle,
-      set: { xUserId, label: label ?? null, updatedAt: now },
+      target: watchAccounts.handle,
+      set: { xUserId, label: label ?? null, lastCheckedAt: now, updatedAt: now },
     })
     .run();
 }
 ```
 
-`label` 为 `undefined` 时写 `null`，以 `accounts.json` 为权威来源覆盖写入。
+`label` 为 `undefined` 时写 `null`，以 `accounts.json` 为权威来源覆盖写入。现有三个调用点（`resolve-account.ts`）不传第四参数则行为不变。
 
 **`src/jobs/resolve-account.ts` — 调用处修改：**
 
@@ -146,6 +156,8 @@ upsertWatchAccount(handle, user.id, now, label);
 ```typescript
 export function prettifyErrorMessage(raw: string): string {
   return raw
+    .replace(/^db(?=_)/, 'DB')
+    .replace(/^api(?=_)/, 'API')
     .replace(/_/g, ' ')
     .replace(/^./, c => c.toUpperCase());
 }
@@ -168,18 +180,16 @@ lines.push(`Last err:  ${failedRun ? prettifyErrorMessage(failedRun.errorMessage
 | `not_found: handle=foo (404)` | `Not found: handle=foo (404)` |
 | `auth_failed: token invalid (401)` | `Auth failed: token invalid (401)` |
 | `network_error: fetch failed ENOTFOUND...` | `Network error: fetch failed ENOTFOUND...` |
-| `db_error: UNIQUE constraint failed` | `Db error: UNIQUE constraint failed` |
+| `db_error: UNIQUE constraint failed` | `DB error: UNIQUE constraint failed` |
+| `api_error: 422` | `API error: 422` |
+| `n/a` | `n/a`（直通，无下划线） |
 
 DB 层 `fetch_runs.error_message` 存储格式不变。
 
-**测试文件 `src/jobs/__tests__/prettify-error-message.test.ts`：**
-
-`prettifyErrorMessage` 是 `status.ts` 内的模块级函数，需导出以供测试，或提取到 `src/utils/format.ts`。推荐提取到 `src/utils/format.ts` 并从 `status.ts` 导入——这样测试路径更自然（`src/utils/__tests__/` 已有其他测试），且不因测试需求被迫 export 一个 status 内部函数。
-
-**测试文件 `src/utils/__tests__/format.test.ts`** 覆盖上述五个转换用例。
+**测试文件 `src/utils/__tests__/format.test.ts`** 覆盖上述七个用例（含 `DB`/`API` 首字母缩写和 `n/a` 直通）。
 
 ### 完成标准
 
 - `x:status` 输出的 `Last err` 行首字母大写、下划线替换为空格
 - `fetch_runs.error_message` 原始值不变
-- `prettifyErrorMessage` 在 `src/utils/format.ts` 导出，五个 branch 均有单测，`pnpm test` 通过
+- `prettifyErrorMessage` 在 `src/utils/format.ts` 导出，七个用例均有单测（含 `DB`/`API` 缩写、`n/a` 直通），`pnpm test` 通过
