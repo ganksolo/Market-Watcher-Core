@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import { eq, count } from 'drizzle-orm';
 import { resolveHandle } from '../utils/cli';
 import { getWatchAccount } from '../services/account-service';
-import { getCursor } from '../services/cursor-service';
+import { repairCursorCoverageIfMissing } from '../services/cursor-service';
 import { getLatestRun, getLatestFailedRun } from '../services/run-log-service';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
@@ -14,7 +14,7 @@ function main(): void {
   const handle = resolveHandle();
 
   const account = getWatchAccount(handle);
-  const cursor = getCursor(handle);
+  const cursor = repairCursorCoverageIfMissing(handle);
   const latestRun = getLatestRun(handle);
   const failedRun = getLatestFailedRun(handle);
 

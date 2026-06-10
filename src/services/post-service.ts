@@ -1,4 +1,4 @@
-import { eq, and, like, asc } from 'drizzle-orm';
+import { eq, and, like, asc, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
 
@@ -72,4 +72,40 @@ export function getPostsByHandleAndDate(handle: string, date: string) {
     .where(and(eq(xPosts.authorHandle, handle), like(xPosts.createdAt, `${date}%`)))
     .orderBy(asc(xPosts.createdAt))
     .all();
+}
+
+export function getCoverageBoundsByHandle(handle: string): {
+  latestTweetId: string | null;
+  latestTweetCreatedAt: string | null;
+  oldestTweetId: string | null;
+  oldestTweetCreatedAt: string | null;
+} {
+  const latest = db
+    .select({
+      tweetId: xPosts.tweetId,
+      createdAt: xPosts.createdAt,
+    })
+    .from(xPosts)
+    .where(eq(xPosts.authorHandle, handle))
+    .orderBy(desc(xPosts.createdAt), desc(xPosts.tweetId))
+    .limit(1)
+    .get();
+
+  const oldest = db
+    .select({
+      tweetId: xPosts.tweetId,
+      createdAt: xPosts.createdAt,
+    })
+    .from(xPosts)
+    .where(eq(xPosts.authorHandle, handle))
+    .orderBy(asc(xPosts.createdAt), asc(xPosts.tweetId))
+    .limit(1)
+    .get();
+
+  return {
+    latestTweetId: latest?.tweetId ?? null,
+    latestTweetCreatedAt: latest?.createdAt ?? null,
+    oldestTweetId: oldest?.tweetId ?? null,
+    oldestTweetCreatedAt: oldest?.createdAt ?? null,
+  };
 }
