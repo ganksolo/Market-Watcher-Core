@@ -46,3 +46,13 @@ export function checkAccountEnabled(handle: string): void {
     process.exit(1);
   }
 }
+
+export function getLabelFromConfig(handle: string): string | undefined {
+  const accountsPath = path.resolve('config/accounts.json');
+  const config: { accounts: Array<{ handle: string; label?: string }> } =
+    JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
+  const account = config.accounts.find(
+    a => normalizeHandle(a.handle) === handle,
+  );
+  return account?.label;
+}
