@@ -95,7 +95,8 @@ pnpm db:migrate
 2. x:backfill  —— 全量历史抓取（支持断点续传）
 3. x:sync      —— 增量同步（仅拉取新推文）
 4. x:export    —— 导出指定日期为 ndjson + markdown
-5. x:status    —— 查看账号抓取状态
+5. x:export:digest —— 导出人工阅读 digest
+6. x:status    —— 查看账号抓取状态
 ```
 
 ### 1. 解析账号
@@ -166,7 +167,34 @@ Markdown 至少包含：
 - `type`
 - `text`
 
-### 5. 查看状态
+### 5. 导出人工阅读 Digest
+
+```bash
+pnpm x:export:digest --handle <handle> --date YYYY-MM-DD
+```
+
+输出文件：
+
+- `exports/digest/<handle>/<date>.digest.md` — 面向人工阅读的结构化简报
+
+Digest 包含：
+
+- `今日阅读结论`
+- `今日一句话主线`
+- `今日新增信息`
+- `今日核心观点`
+- `观点 → 标的映射`
+- `事件 / 催化因素`
+- `时间线`
+- `分歧点与反驳对象`
+- `博主立场`
+- `信息类型与可信度`
+- `后续观察点`
+- `需要后续验证的问题`
+- `Top Must Read Tweets`
+- `原始推文列表`
+
+### 6. 查看状态
 
 ```bash
 pnpm x:status --handle <handle>
@@ -239,6 +267,12 @@ exports/          导出文件（gitignored）
 data/             SQLite 数据库（gitignored）
 logs/             运行日志（gitignored）
 ```
+
+其中导出层分为三类：
+
+- `exports/raw/`：机器可读 ndjson
+- `exports/daily/`：原始 markdown 浏览稿
+- `exports/digest/`：人工阅读 digest 简报
 
 ---
 
