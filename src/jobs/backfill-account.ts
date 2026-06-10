@@ -1,11 +1,12 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { resolveHandle, getArg } from '../utils/cli';
+import { resolveHandle, getArg, checkAccountEnabled } from '../utils/cli';
+import { classifyError } from '../utils/classify-error';
 import { logger } from '../utils/logger';
 import { nowISO } from '../utils/date';
 import { sleep } from '../utils/sleep';
-import { createXApiClient, ApiError } from '../clients/x-api-client';
+import { createXApiClient } from '../clients/x-api-client';
 import type { XApiListResponse, XTweet } from '../clients/x-api-types';
 import { getWatchAccount } from '../services/account-service';
 import { getCursor, initCursor, updateCursor } from '../services/cursor-service';
@@ -21,30 +22,12 @@ const TWEET_FIELDS = [
 
 async function main(): Promise<void> {
   const handle = resolveHandle();
+  checkAccountEnabled(handle);
   const maxPagesArg = getArg('max-pages');
-
-  const policyPath = path.resolve('config/fetch-policy.json');
-  const policy: {
-    default: {
-      maxResultsPerPage: number;
-      maxPagesPerRun: number;
-      maxPostsPerRun: number;
-      includeReplies: boolean;
-      includeRetweets: boolean;
-      includeQuotes: boolean;
-      sleepMsBetweenRequests: number;
-      estimatedPostReadCost: number;
-      maxEstimatedCostPerRun: number;
-    };
-  } = JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
-
-  const p = policy.default;
-  const maxPages = maxPagesArg ? parseInt(maxPagesArg, 10) : p.maxPagesPerRun;
-  const maxPostsPerRun = p.maxPostsPerRun;
 
   const cursor = getCursor(handle);
   if (cursor?.backfillCompleted === 1) {
-    logger.info({ handle }, 'Backfill already completed, nothing to do');
+    logger.info({ handle }, 'Backfill already completed — skipping');
     return;
   }
 
@@ -56,9 +39,42 @@ async function main(): Promise<void> {
   const xUserId = account.xUserId;
 
   let runId: number | undefined = undefined;
+  let p: {
+    maxResultsPerPage: number;
+    maxPagesPerRun: number;
+    maxPostsPerRun: number;
+    includeReplies: boolean;
+    includeRetweets: boolean;
+    includeQuotes: boolean;
+    sleepMsBetweenRequests: number;
+    estimatedPostReadCost: number;
+    maxEstimatedCostPerRun: number;
+  } | undefined = undefined;
+  let pagesCount = 0;
+  let insertedPosts = 0;
+  let duplicatedPosts = 0;
+  let totalEstimatedPostReads = 0;
 
   try {
     runId = createRun('backfill', handle, nowISO());
+
+    const policyPath = path.resolve('config/fetch-policy.json');
+    const policy: {
+      default: {
+        maxResultsPerPage: number;
+        maxPagesPerRun: number;
+        maxPostsPerRun: number;
+        includeReplies: boolean;
+        includeRetweets: boolean;
+        includeQuotes: boolean;
+        sleepMsBetweenRequests: number;
+        estimatedPostReadCost: number;
+        maxEstimatedCostPerRun: number;
+      };
+    } = JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
+    p = policy.default;
+    const maxPages = maxPagesArg ? parseInt(maxPagesArg, 10) : p.maxPagesPerRun;
+    const maxPostsPerRun = p.maxPostsPerRun;
 
     const client = createXApiClient();
 
@@ -66,12 +82,9 @@ async function main(): Promise<void> {
     if (!p.includeRetweets) excludeParts.push('retweets');
     if (!p.includeReplies) excludeParts.push('replies');
 
-    let pagesCount = 0;
-    let insertedPosts = 0;
-    let duplicatedPosts = 0;
-    let totalEstimatedPostReads = 0;
     let currentPaginationToken: string | undefined = cursor?.lastPaginationToken ?? undefined;
     let isFirstPage = !currentPaginationToken;
+    let isBackfillComplete = false;
 
     logger.info({ handle, xUserId, maxPages }, 'Starting backfill');
 
@@ -187,7 +200,6 @@ async function main(): Promise<void> {
       const cursorPatch: Parameters<typeof updateCursor>[1] = {
         lastPaginationToken: meta?.next_token ?? null,
         oldestTweetId: meta?.oldest_id ?? undefined,
-        ...(isLastPage ? { backfillCompleted: 1 } : {}),
         updatedAt: pageNow,
       };
       if (isFirstPage && meta?.newest_id) {
@@ -200,6 +212,7 @@ async function main(): Promise<void> {
         cursorPatch.oldestTweetCreatedAt = oldestCreatedAt;
       }
       updateCursor(handle, cursorPatch);
+      if (isLastPage) isBackfillComplete = true;
       isFirstPage = false;
 
       pagesCount++;
@@ -216,6 +229,10 @@ async function main(): Promise<void> {
       }
 
       await sleep(p.sleepMsBetweenRequests);
+    }
+
+    if (isBackfillComplete) {
+      updateCursor(handle, { backfillCompleted: 1, updatedAt: nowISO() });
     }
 
     const finalCostUsd = totalEstimatedPostReads * p.estimatedPostReadCost;
@@ -235,18 +252,22 @@ async function main(): Promise<void> {
       'Backfill finished successfully',
     );
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-
-    if (err instanceof ApiError) {
-      if (err.status === 401) logger.error('X_BEARER_TOKEN is invalid or expired');
-      else if (err.status === 404) logger.error({ handle }, 'Account not found or not accessible');
-    }
+    const { logMessage, errorMessage } = classifyError(err, { handle });
+    if (logMessage) logger.error({ handle }, logMessage);
 
     if (runId !== undefined) {
       finishRun(runId, {
         status: 'failed',
         finishedAt: nowISO(),
         errorMessage,
+        requestedPages: pagesCount,
+        fetchedPosts: insertedPosts + duplicatedPosts,
+        insertedPosts,
+        duplicatedPosts,
+        estimatedPostReads: totalEstimatedPostReads,
+        estimatedCostUsd: p != null
+          ? totalEstimatedPostReads * p.estimatedPostReadCost
+          : undefined,
       });
     }
 
