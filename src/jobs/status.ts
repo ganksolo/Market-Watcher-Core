@@ -6,6 +6,7 @@ import { getCursor } from '../services/cursor-service';
 import { getLatestRun, getLatestFailedRun } from '../services/run-log-service';
 import { db } from '../db';
 import { xPosts } from '../db/schema';
+import { prettifyErrorMessage } from '../utils/format';
 
 dotenv.config();
 
@@ -56,7 +57,7 @@ function main(): void {
     lines.push('Last run:  no runs yet');
   }
 
-  lines.push(`Last err:  ${failedRun?.errorMessage ?? 'n/a'}`);
+  lines.push(`Last err:  ${failedRun ? prettifyErrorMessage(failedRun.errorMessage ?? 'n/a') : 'n/a'}`);
 
   console.log(lines.join('\n'));
 }
