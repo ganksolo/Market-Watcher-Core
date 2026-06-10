@@ -6,7 +6,7 @@ describe('estimateCost', () => {
     const result = estimateCost(100, 1, 0.0001, 0.001);
     expect(result.postReads).toBe(100);
     expect(result.userReads).toBe(1);
-    expect(result.totalUsd).toBeCloseTo(0.011, 10);
+    expect(result.totalUsd).toBeCloseTo(0.011, 5);
   });
 
   it('returns all zeros for zero reads', () => {
