@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { resolveHandle, checkAccountEnabled } from '../utils/cli';
+import { resolveHandle, checkAccountEnabled, getLabelFromConfig } from '../utils/cli';
 import { logger } from '../utils/logger';
 import { nowISO } from '../utils/date';
 import { classifyError } from '../utils/classify-error';
@@ -50,7 +50,8 @@ async function main(): Promise<void> {
     const user = response.data;
     const now = nowISO();
 
-    upsertWatchAccount(handle, user.id, now);
+    const label = getLabelFromConfig(handle);
+    upsertWatchAccount(handle, user.id, now, label);
     upsertXUser({
       xUserId: user.id,
       username: user.username,

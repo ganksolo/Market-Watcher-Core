@@ -6,11 +6,13 @@ export function upsertWatchAccount(
   handle: string,
   xUserId: string,
   now: string,
+  label?: string,
 ): void {
   db.insert(watchAccounts)
     .values({
       handle,
       xUserId,
+      label: label ?? null,
       firstSeenAt: now,
       lastCheckedAt: now,
       createdAt: now,
@@ -18,7 +20,7 @@ export function upsertWatchAccount(
     })
     .onConflictDoUpdate({
       target: watchAccounts.handle,
-      set: { xUserId, lastCheckedAt: now, updatedAt: now },
+      set: { xUserId, label: label ?? null, lastCheckedAt: now, updatedAt: now },
     })
     .run();
 }
