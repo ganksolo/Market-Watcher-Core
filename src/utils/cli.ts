@@ -33,3 +33,16 @@ export function resolveHandle(): string {
   }
   return normalizeHandle(first.handle);
 }
+
+export function checkAccountEnabled(handle: string): void {
+  const accountsPath = path.resolve('config/accounts.json');
+  const config: { accounts: Array<{ handle: string; enabled: boolean }> } =
+    JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
+  const account = config.accounts.find(
+    a => normalizeHandle(a.handle) === handle,
+  );
+  if (account && account.enabled === false) {
+    console.error(`Account @${handle} is disabled in config/accounts.json — aborting`);
+    process.exit(1);
+  }
+}
