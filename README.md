@@ -24,8 +24,16 @@ pnpm install
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 X_BEARER_TOKEN
 ```
+
+`.env` 示例：
+
+```
+X_BEARER_TOKEN=<your_bearer_token>
+DATABASE_URL=file:./data/market-watcher.sqlite
+```
+
+> `X_BEARER_TOKEN` 填纯 token，不加 `Bearer ` 前缀——HTTP 客户端会自动拼接。
 
 初始化数据库（首次运行必须执行）：
 
@@ -107,8 +115,31 @@ pnpm x:export:daily --handle <handle> --date YYYY-MM-DD
 ```
 
 输出文件：
-- `exports/raw/<handle>/<date>.ndjson` — 每行一条原始 X API JSON
-- `exports/daily/<handle>/<date>.md` — Markdown 列表格式
+- `exports/raw/<handle>/<date>.ndjson` — 机器可读，每行一条 envelope JSON
+- `exports/daily/<handle>/<date>.md` — 人类可读，Markdown 列表格式
+
+每行 ndjson 的 envelope 结构：
+
+```json
+{
+  "tweet_id": "...",
+  "author_handle": "...",
+  "created_at": "2026-06-09T14:35:00.000Z",
+  "text": "...",
+  "url": "https://x.com/handle/status/...",
+  "type": "tweet",
+  "referenced_tweet_id": null,
+  "public_metrics": {
+    "like_count": 0,
+    "reply_count": 0,
+    "retweet_count": 0,
+    "quote_count": 0,
+    "bookmark_count": 0,
+    "impression_count": 0
+  },
+  "raw_json": {}
+}
+```
 
 ### 5. 查看状态
 
@@ -123,10 +154,11 @@ Account:   @example_handle
 User ID:   123456789
 Posts:     1842 total
 Backfill:  completed ✓
-Latest:    1799xxxxxxxxxxxxxxx
+Latest:    1799xxxxxxxxxxxxxxx (2026-06-09T14:35:00.000Z)
 Oldest:    1700xxxxxxxxxxxxxxx
 
-Last run:  sync · success · 3 inserted · 2026-06-09T14:35:00.000Z
+Last run:  sync · success · 3 inserted · 2026-06-09T14:35:00.000Z · $0.00
+Last err:  n/a
 ```
 
 ---
@@ -148,7 +180,12 @@ Last run:  sync · success · 3 inserted · 2026-06-09T14:35:00.000Z
 
 ## 成本保护
 
-每次 API 调用前预估费用：`(pagesCount + 1) × maxResultsPerPage × estimatedPostReadCost`。超过 `maxEstimatedCostPerRun` 时自动停止，run 状态记录为 `stopped_by_cost_limit`。
+每次 API 调用前预估费用，按 job 类型区分：
+
+- `x:resolve`：`estimatedCostUsd = 1 × estimatedUserReadCost`
+- `x:backfill` / `x:sync`：`estimatedCostUsd = totalEstimatedPostReads × estimatedPostReadCost`
+
+参数均来自 `config/fetch-policy.json`。超过 `maxEstimatedCostPerRun` 时自动停止，run 状态记录为 `stopped_by_cost_limit`。
 
 ---
 
