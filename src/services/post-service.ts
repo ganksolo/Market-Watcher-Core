@@ -35,7 +35,17 @@ export function upsertPost(params: {
   }
 
   db.update(xPosts)
-    .set({ lastFetchedAt: params.lastFetchedAt })
+    .set({
+      text: params.text,
+      likeCount: params.likeCount,
+      replyCount: params.replyCount,
+      repostCount: params.repostCount,
+      quoteCount: params.quoteCount,
+      bookmarkCount: params.bookmarkCount,
+      impressionCount: params.impressionCount,
+      rawJson: params.rawJson,
+      lastFetchedAt: params.lastFetchedAt,
+    })
     .where(eq(xPosts.tweetId, params.tweetId))
     .run();
 
