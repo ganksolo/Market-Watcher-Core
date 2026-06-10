@@ -1,11 +1,12 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { resolveHandle, getArg } from '../utils/cli';
+import { resolveHandle, getArg, checkAccountEnabled } from '../utils/cli';
+import { classifyError } from '../utils/classify-error';
 import { logger } from '../utils/logger';
 import { nowISO } from '../utils/date';
 import { sleep } from '../utils/sleep';
-import { createXApiClient, ApiError } from '../clients/x-api-client';
+import { createXApiClient } from '../clients/x-api-client';
 import type { XApiListResponse, XTweet } from '../clients/x-api-types';
 import { getWatchAccount } from '../services/account-service';
 import { getCursor, updateCursor } from '../services/cursor-service';
@@ -21,26 +22,8 @@ const TWEET_FIELDS = [
 
 async function main(): Promise<void> {
   const handle = resolveHandle();
+  checkAccountEnabled(handle);
   const maxPagesArg = getArg('max-pages');
-
-  const policyPath = path.resolve('config/fetch-policy.json');
-  const policy: {
-    default: {
-      maxResultsPerPage: number;
-      maxPagesPerRun: number;
-      maxPostsPerRun: number;
-      includeReplies: boolean;
-      includeRetweets: boolean;
-      includeQuotes: boolean;
-      sleepMsBetweenRequests: number;
-      estimatedPostReadCost: number;
-      maxEstimatedCostPerRun: number;
-    };
-  } = JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
-
-  const p = policy.default;
-  const maxPages = maxPagesArg ? parseInt(maxPagesArg, 10) : p.maxPagesPerRun;
-  const maxPostsPerRun = p.maxPostsPerRun;
 
   const cursor = getCursor(handle);
   if (!cursor?.latestTweetId) {
@@ -56,9 +39,42 @@ async function main(): Promise<void> {
   const xUserId = account.xUserId;
 
   let runId: number | undefined = undefined;
+  let p: {
+    maxResultsPerPage: number;
+    maxPagesPerRun: number;
+    maxPostsPerRun: number;
+    includeReplies: boolean;
+    includeRetweets: boolean;
+    includeQuotes: boolean;
+    sleepMsBetweenRequests: number;
+    estimatedPostReadCost: number;
+    maxEstimatedCostPerRun: number;
+  } | undefined = undefined;
+  let pagesCount = 0;
+  let insertedPosts = 0;
+  let duplicatedPosts = 0;
+  let totalEstimatedPostReads = 0;
 
   try {
     runId = createRun('sync', handle, nowISO());
+
+    const policyPath = path.resolve('config/fetch-policy.json');
+    const policy: {
+      default: {
+        maxResultsPerPage: number;
+        maxPagesPerRun: number;
+        maxPostsPerRun: number;
+        includeReplies: boolean;
+        includeRetweets: boolean;
+        includeQuotes: boolean;
+        sleepMsBetweenRequests: number;
+        estimatedPostReadCost: number;
+        maxEstimatedCostPerRun: number;
+      };
+    } = JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
+    p = policy.default;
+    const maxPages = maxPagesArg ? parseInt(maxPagesArg, 10) : p.maxPagesPerRun;
+    const maxPostsPerRun = p.maxPostsPerRun;
 
     const client = createXApiClient();
 
@@ -73,10 +89,6 @@ async function main(): Promise<void> {
     };
     if (excludeParts.length) baseParams.exclude = excludeParts.join(',');
 
-    let pagesCount = 0;
-    let insertedPosts = 0;
-    let duplicatedPosts = 0;
-    let totalEstimatedPostReads = 0;
     let newestId: string | undefined = undefined;
     let currentPaginationToken: string | undefined;
     let firstPageTweets: XTweet[] = [];
@@ -248,18 +260,22 @@ async function main(): Promise<void> {
       'Sync finished successfully',
     );
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-
-    if (err instanceof ApiError) {
-      if (err.status === 401) logger.error('X_BEARER_TOKEN is invalid or expired');
-      else if (err.status === 404) logger.error({ handle }, 'Account not found or not accessible');
-    }
+    const { logMessage, errorMessage } = classifyError(err, { handle });
+    if (logMessage) logger.error({ handle }, logMessage);
 
     if (runId !== undefined) {
       finishRun(runId, {
         status: 'failed',
         finishedAt: nowISO(),
         errorMessage,
+        requestedPages: pagesCount,
+        fetchedPosts: insertedPosts + duplicatedPosts,
+        insertedPosts,
+        duplicatedPosts,
+        estimatedPostReads: totalEstimatedPostReads,
+        estimatedCostUsd: p != null
+          ? totalEstimatedPostReads * p.estimatedPostReadCost
+          : undefined,
       });
     }
 
