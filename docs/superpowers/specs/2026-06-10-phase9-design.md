@@ -221,7 +221,8 @@ Backfill:  completed ✓
 Latest:    1799xxxxxxxxxxxxxxx (2026-06-09T14:35:00.000Z)
 Oldest:    1700xxxxxxxxxxxxxxx
 
-Last run:  sync · success · 3 inserted · $0.0003 · 2026-06-09T14:35:00.000Z
+Last run:  sync · success · 3 inserted · 2026-06-09T14:35:00.000Z · $0.00
+Last err:  n/a
 ```
 
 ### 完成标准
@@ -230,4 +231,5 @@ Last run:  sync · success · 3 inserted · $0.0003 · 2026-06-09T14:35:00.000Z
 - NDJSON envelope 字段列出
 - export 两个目录的用途各有说明
 - 成本公式区分 resolve 与 backfill/sync，与实际代码一致
-- status 示例包含 cost 字段
+- status 示例字段顺序与 `status.ts:53` 一致（`inserted · startedAt · $cost`），cost 格式为 `$x.xx`
+- status 示例包含 `Last err:` 行
