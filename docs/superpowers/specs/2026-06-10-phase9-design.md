@@ -56,7 +56,7 @@
 
 ```typescript
 redact: {
-  paths: ['authorization', 'token', 'password', 'X_BEARER_TOKEN', '*.token', '*.authorization', '*.X_BEARER_TOKEN'],
+  paths: ['authorization', 'token', 'password', 'X_BEARER_TOKEN', '*.token', '*.authorization', '*.X_BEARER_TOKEN', '*.password'],
   censor: '[REDACTED]',
 },
 ```
@@ -66,7 +66,7 @@ redact: {
 - `X_BEARER_TOKEN`：防止 env 对象被意外 spread 进日志
 - `*.X_BEARER_TOKEN`：覆盖嵌套对象中的 X_BEARER_TOKEN（如 `{ env: { X_BEARER_TOKEN: ... } }`）
 - `*.token` / `*.authorization`：覆盖任何嵌套对象中的同名字段
-- `password`：通用防护
+- `password` / `*.password`：顶层与嵌套对象中的 password 字段
 
 pino `redact` 在序列化阶段运行，不影响 log 级别或结构。
 
