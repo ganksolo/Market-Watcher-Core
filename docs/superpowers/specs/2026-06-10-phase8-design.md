@@ -161,7 +161,7 @@ export function classifyError(
     };
   }
 
-  // 配置文件缺失 / 无法读取（ENOENT from fs.readFileSync）
+  // 配置文件缺失：当前 job 中由配置读取（accounts.json / fetch-policy.json）触发的 ENOENT 归为 config_error
   if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
     return {
       logMessage: `Config file not found: ${err.message}`,
@@ -240,7 +240,7 @@ try {
   // ... 其余逻辑（不再在 try 内重新声明上述变量）
 } catch (err) {
   const { logMessage, errorMessage } = classifyError(err, { handle });
-  if (logMessage) logger.error(logMessage);
+  if (logMessage) logger.error({ handle }, logMessage);
 
   if (runId !== undefined) {
     finishRun(runId, {
@@ -312,7 +312,7 @@ if (isBackfillComplete) {
 finishRun(runId, { status: 'success', ... });
 ```
 
-语义：`backfillCompleted` 写入失败会抛出异常，被外层 catch 捕获并将 run 标记为 failed，cursor 也不会被标记完成 — 两者状态一致。反之，cursor 完成后 `finishRun` 才执行，即使 `finishRun` 失败，cursor 已经正确记录完成状态，下次运行会直接跳过（这比"run=success 但 cursor 未完成"更安全）。
+语义：`backfillCompleted` 写入失败会抛出异常，被外层 catch 捕获并将 run 标记为 failed，cursor 也不会被标记完成。这是优先级选择：**避免重复 backfill** 比 **run/cursor 完全原子一致** 更重要——cursor 完成而 run 未记录 success 只是统计上的小缺口；而 run=success 但 cursor 未标完成，会导致下次重跑整个 backfill，代价更高。
 
 ### export 无数据日期
 
@@ -338,6 +338,7 @@ logger.info({ handle }, 'Backfill already completed — skipping');
 
 ### 完成标准
 
-- `fetch_cursors.backfill_completed` 只在 run 成功后写入
+- `fetch_cursors.backfill_completed` 只在 backfill 数据抓取逻辑全部成功完成后写入，中途失败时不写入
 - 中途失败的 backfill run 不会留下错误的 `backfill_completed = 1`
+- `finishRun` 失败（极小概率）时 cursor 已标完成，下次运行会正确跳过（不重跑）
 - export 无数据时日志 level 为 warn，易于识别
