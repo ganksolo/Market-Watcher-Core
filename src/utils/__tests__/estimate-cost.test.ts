@@ -4,11 +4,9 @@ import { estimateCost } from '../cost';
 describe('estimateCost', () => {
   it('returns correct object for normal input', () => {
     const result = estimateCost(100, 1, 0.0001, 0.001);
-    expect(result).toEqual({
-      postReads: 100,
-      userReads: 1,
-      totalUsd: 0.011,
-    });
+    expect(result.postReads).toBe(100);
+    expect(result.userReads).toBe(1);
+    expect(result.totalUsd).toBeCloseTo(0.011, 10);
   });
 
   it('returns all zeros for zero reads', () => {
