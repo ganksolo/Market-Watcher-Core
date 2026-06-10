@@ -44,7 +44,7 @@
 | 新增 | `src/utils/__tests__/check-account-enabled.test.ts` | checkAccountEnabled 测试（fs/process mock） |
 | 新增 | `vitest.config.ts` | testEnvironment: node，最小配置 |
 | 修改 | `package.json` | `"test": "vitest run"` + vitest devDep |
-| 修改 | `README.md` | .env 说明、NDJSON envelope、export 目录区分、成本公式 |
+| 修改 | `README.md` | .env 说明、NDJSON envelope、export 目录区分、成本公式、status 示例 |
 
 ---
 
@@ -56,7 +56,7 @@
 
 ```typescript
 redact: {
-  paths: ['authorization', 'token', 'password', 'X_BEARER_TOKEN', '*.token', '*.authorization'],
+  paths: ['authorization', 'token', 'password', 'X_BEARER_TOKEN', '*.token', '*.authorization', '*.X_BEARER_TOKEN'],
   censor: '[REDACTED]',
 },
 ```
@@ -64,6 +64,7 @@ redact: {
 覆盖范围：
 - `authorization`：HTTP 头直传对象（`{ authorization: 'Bearer xxx' }`）
 - `X_BEARER_TOKEN`：防止 env 对象被意外 spread 进日志
+- `*.X_BEARER_TOKEN`：覆盖嵌套对象中的 X_BEARER_TOKEN（如 `{ env: { X_BEARER_TOKEN: ... } }`）
 - `*.token` / `*.authorization`：覆盖任何嵌套对象中的同名字段
 - `password`：通用防护
 
@@ -100,19 +101,24 @@ export default defineConfig({
 
 #### normalize-handle.test.ts
 
+`normalizeHandle` 只去前导 `@`，不做 lower-case（`cli.ts:19`）。
+
 覆盖场景：
-- `@Handle` → `handle`（去 @ + 小写）
-- `Handle` → `handle`（只小写）
+- `@Handle` → `Handle`（去 @，保留大小写）
+- `Handle` → `Handle`（无 @，原样返回）
 - `handle` → `handle`（已规范化）
-- `@UPPER` → `upper`
+- `@UPPER` → `UPPER`
 - 空字符串 → 空字符串
 
 #### estimate-cost.test.ts
 
+`estimateCost(postReads, userReads, postCostPerUnit, userCostPerUnit)` 返回 `{ postReads, userReads, totalUsd }`（见 `cost.ts`）。
+
 覆盖场景：
-- 已知 `reads × costPerRead` 精确输出
-- 0 reads → 0
-- 小数精度
+- 正常输入：`estimateCost(100, 1, 0.0001, 0.001)` → `{ postReads: 100, userReads: 1, totalUsd: 0.011 }`
+- 全 0：`estimateCost(0, 0, 0.0001, 0.001)` → `{ postReads: 0, userReads: 0, totalUsd: 0 }`
+- 只有 postReads：`estimateCost(50, 0, 0.002, 0.001)` → `totalUsd: 0.1`，`userReads: 0`
+- 输入原样透传：返回对象中 `postReads` 和 `userReads` 与入参一致
 
 #### classify-error.test.ts
 
@@ -131,16 +137,24 @@ export default defineConfig({
 
 #### check-account-enabled.test.ts
 
-使用 `vi.spyOn(fs, 'readFileSync')` mock 文件读取，`vi.spyOn(process, 'exit')` mock 退出：
+使用 `vi.spyOn(fs, 'readFileSync')` mock 文件读取。`process.exit` 使用 sentinel 抛出策略：
+
+```typescript
+vi.spyOn(process, 'exit').mockImplementation((code) => {
+  throw new Error(`process.exit called with ${code}`);
+});
+```
+
+这样 disabled 分支会抛出 sentinel error，测试可用 `expect(...).toThrow('process.exit called with 1')` 断言，而不会让测试进程真正退出，也不会让函数在 exit mock 后继续执行。
 
 覆盖场景：
-- `enabled: false` → `process.exit(1)` 被调用
-- `enabled: true` → `process.exit` 不被调用
-- 账号不在列表中 → `process.exit` 不被调用
-- `enabled` 字段缺失 → `process.exit` 不被调用
-- handle 带 `@` 前缀（`@foo`）→ 规范化后与配置匹配正确
+- `enabled: false` → 抛出含 "process.exit called with 1" 的 error
+- `enabled: true` → 不抛出
+- 账号不在列表中 → 不抛出
+- `enabled` 字段缺失 → 不抛出
+- handle 带 `@` 前缀（`@foo`）传入，配置里为 `foo` → 不抛出（规范化后匹配）
 
-每个测试用 `beforeEach` / `afterEach` 恢复 spy。
+每个测试用 `afterEach(() => vi.restoreAllMocks())` 恢复 spy。
 
 ### 完成标准
 
@@ -166,9 +180,11 @@ export default defineConfig({
 1. **`.env` 说明**：
 
 ```
-X_BEARER_TOKEN=Bearer <your_token>
+X_BEARER_TOKEN=<your_token>
 DATABASE_URL=file:./data/market-watcher.sqlite  # 默认值，可省略
 ```
+
+注意：`X_BEARER_TOKEN` 填纯 token，不加 `Bearer ` 前缀——客户端会自动拼接（`x-api-client.ts:37`）。
 
 2. **NDJSON envelope 字段**（`exports/raw/{handle}/*.ndjson` 每行格式）：
 
@@ -188,11 +204,30 @@ DATABASE_URL=file:./data/market-watcher.sqlite  # 默认值，可省略
 
 3. **export 目录区分**：`exports/raw/` 机器可读（ndjson），`exports/daily/` 人类可读（markdown）。
 
-4. **成本公式修正**：`estimatedCostUsd = totalEstimatedPostReads × estimatedPostReadCost`，参数来自 `config/fetch-policy.json`。
+4. **成本公式修正**（区分两种路径）：
+
+   - `resolve`：`estimatedCostUsd = 1 × estimatedUserReadCost`（每次 1 次 user read，参数来自 `fetch-policy.json`）
+   - `backfill` / `sync`：`estimatedCostUsd = totalEstimatedPostReads × estimatedPostReadCost`（参数来自 `fetch-policy.json`）
+
+   原 README 公式 `(pagesCount + 1) × maxResultsPerPage × estimatedPostReadCost` 与实现不符，一并替换。
+
+5. **status 输出示例更新**（`README.md` 第 119–130 行）：当前示例缺少 `cost` 和 `last err` 字段，更新为：
+
+```
+Account:   @example_handle
+User ID:   123456789
+Posts:     1842 total
+Backfill:  completed ✓
+Latest:    1799xxxxxxxxxxxxxxx (2026-06-09T14:35:00.000Z)
+Oldest:    1700xxxxxxxxxxxxxxx
+
+Last run:  sync · success · 3 inserted · $0.0003 · 2026-06-09T14:35:00.000Z
+```
 
 ### 完成标准
 
-- README 中有 `.env` 示例
+- README 中有 `.env` 示例，且注明不加 `Bearer ` 前缀
 - NDJSON envelope 字段列出
 - export 两个目录的用途各有说明
-- 成本公式与实际代码一致
+- 成本公式区分 resolve 与 backfill/sync，与实际代码一致
+- status 示例包含 cost 字段
