@@ -31,6 +31,7 @@ cp .env.example .env
 ```
 X_BEARER_TOKEN=<your_bearer_token>
 DATABASE_URL=file:./data/market-watcher.sqlite
+LOG_LEVEL=info
 ```
 
 > `X_BEARER_TOKEN` 填纯 token，不加 `Bearer ` 前缀——HTTP 客户端会自动拼接。
@@ -71,6 +72,19 @@ pnpm db:migrate
 | `includeQuotes` | true | 是否包含引用推文 |
 | `sleepMsBetweenRequests` | 1200 | 请求间隔（毫秒） |
 | `maxEstimatedCostPerRun` | 5 | 单次运行最大预估费用（USD） |
+
+---
+
+## 当前交付状态
+
+当前项目已经完成第一阶段收口，可作为后续 `Market Watcher Agent` 的基础数据层，满足以下约束：
+
+- 仅做原始数据采集，不包含 LLM、UI、Agent、交易建议
+- `tweet_id` 去重，重复抓取时刷新 `text`、`public_metrics`、`raw_json`、`last_fetched_at`
+- `fetch_cursors` 保存最新/最旧 tweet id 与对应 `created_at`
+- `status` 可查看覆盖范围、最近运行结果、最近错误、最近成本
+- `accounts.json` 中的 `label` 会在 `x:resolve` 时同步进数据库
+- 禁用账号不会被 `resolve` / `backfill` / `sync` 继续抓取
 
 ---
 
@@ -141,6 +155,17 @@ pnpm x:export:daily --handle <handle> --date YYYY-MM-DD
 }
 ```
 
+Markdown 至少包含：
+
+- `handle`
+- `date`
+- `post count`
+- 每条 post 的完整 `created_at`
+- `tweet_id`
+- `url`
+- `type`
+- `text`
+
 ### 5. 查看状态
 
 ```bash
@@ -160,6 +185,11 @@ Oldest:    1700xxxxxxxxxxxxxxx
 Last run:  sync · success · 3 inserted · 2026-06-09T14:35:00.000Z · $0.00
 Last err:  n/a
 ```
+
+最近错误会做轻量可读化展示，例如：
+
+- `rate_limit_exceeded (429)` → `Rate limit exceeded (429)`
+- `db_error: UNIQUE constraint failed` → `DB error: UNIQUE constraint failed`
 
 ---
 
@@ -183,9 +213,15 @@ Last err:  n/a
 每次 API 调用前预估费用，按 job 类型区分：
 
 - `x:resolve`：`estimatedCostUsd = 1 × estimatedUserReadCost`
-- `x:backfill` / `x:sync`：`estimatedCostUsd = totalEstimatedPostReads × estimatedPostReadCost`
+- `x:backfill` / `x:sync`：`estimatedCostUsd = (estimatedUserReads × estimatedUserReadCost) + (estimatedPostReads × estimatedPostReadCost)`
 
 参数均来自 `config/fetch-policy.json`。超过 `maxEstimatedCostPerRun` 时自动停止，run 状态记录为 `stopped_by_cost_limit`。
+
+同时会执行以下运行保护：
+
+- `maxPagesPerRun`
+- `maxPostsPerRun`
+- `maxEstimatedCostPerRun`
 
 ---
 
@@ -202,4 +238,18 @@ src/
 exports/          导出文件（gitignored）
 data/             SQLite 数据库（gitignored）
 logs/             运行日志（gitignored）
+```
+
+---
+
+## 验证
+
+项目当前提供：
+
+- `pnpm test`
+
+如需本地做额外静态检查，可直接运行：
+
+```bash
+./node_modules/.bin/tsc --noEmit
 ```
