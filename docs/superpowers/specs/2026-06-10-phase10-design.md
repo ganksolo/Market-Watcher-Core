@@ -75,7 +75,7 @@ db.update(xPosts)
 
 ### 完成标准
 
-- 同一 tweet 第二次抓取后，`x_posts` 中 `like_count`、`text`、`raw_json` 均已更新
+- 同一 tweet 第二次抓取后，`x_posts` 中 `like_count`、`text` 已更新为最新值，`raw_json` 已更新为最新 API 返回版本
 - `first_fetched_at` 保持首次值不变
 - `duplicated_posts` 计数仍正确递增
 
@@ -128,7 +128,7 @@ export function upsertWatchAccount(
 }
 ```
 
-`label` 为 `undefined` 时写 `null`，以 `accounts.json` 为权威来源覆盖写入。现有三个调用点（`resolve-account.ts`）不传第四参数则行为不变。
+`label` 为 `undefined` 时写 `null`，以 `accounts.json` 为权威来源覆盖写入。`label?` 是可选参数，其他未修改的调用点不传第四参数时行为完全兼容。
 
 **`src/jobs/resolve-account.ts` — 调用处修改：**
 
@@ -155,6 +155,7 @@ upsertWatchAccount(handle, user.id, now, label);
 
 ```typescript
 export function prettifyErrorMessage(raw: string): string {
+  if (raw === 'n/a') return raw;   // 直通，避免 n → N/a
   return raw
     .replace(/^db(?=_)/, 'DB')
     .replace(/^api(?=_)/, 'API')
