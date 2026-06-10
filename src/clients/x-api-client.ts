@@ -57,7 +57,7 @@ export class XApiClient {
       return response.json() as Promise<T>;
     }
 
-    throw new Error(`Max retries exceeded for ${path}`);
+    throw new ApiError(429, 'Max retries exceeded', path);
   }
 }
 
