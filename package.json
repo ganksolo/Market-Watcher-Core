@@ -11,6 +11,7 @@
     "x:sync": "tsx src/jobs/sync-account.ts",
     "x:export:daily": "tsx src/jobs/export-daily-raw.ts",
     "x:export:digest": "tsx src/jobs/export-digest.ts",
+    "x:daily": "tsx src/jobs/daily-run.ts",
     "x:status": "tsx src/jobs/status.ts",
     "test": "vitest run"
   },

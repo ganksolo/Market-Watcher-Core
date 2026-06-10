@@ -96,7 +96,8 @@ pnpm db:migrate
 3. x:sync      —— 增量同步（仅拉取新推文）
 4. x:export    —— 导出指定日期为 ndjson + markdown
 5. x:export:digest —— 导出人工阅读 digest
-6. x:status    —— 查看账号抓取状态
+6. x:daily     —— 一次执行 sync + daily export + digest + status
+7. x:status    —— 查看账号抓取状态
 ```
 
 ### 1. 解析账号
@@ -185,16 +186,36 @@ Digest 包含：
 - `今日核心观点`
 - `观点 → 标的映射`
 - `事件 / 催化因素`
-- `时间线`
-- `分歧点与反驳对象`
 - `博主立场`
 - `信息类型与可信度`
 - `后续观察点`
 - `需要后续验证的问题`
-- `Top Must Read Tweets`
-- `原始推文列表`
+- `分歧点与反驳对象`
 
-### 6. 查看状态
+### 6. 每日组合命令
+
+```bash
+pnpm x:daily
+```
+
+可选：
+
+```bash
+pnpm x:daily --date YYYY-MM-DD
+pnpm x:daily --handle <handle>
+pnpm x:daily --handle <handle> --date YYYY-MM-DD
+```
+
+说明：
+
+- 不传 `--date` 时，默认使用当前日期
+- 会按顺序执行：
+  - `x:sync`
+  - `x:export:daily`
+  - `x:export:digest`
+  - `x:status`
+
+### 7. 查看状态
 
 ```bash
 pnpm x:status --handle <handle>
