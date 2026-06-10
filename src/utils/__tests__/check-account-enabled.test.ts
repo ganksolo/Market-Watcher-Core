@@ -14,7 +14,7 @@ describe('checkAccountEnabled', () => {
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       makeConfig([{ handle: 'foo', enabled: false }]) as any,
     );
-    vi.spyOn(process, 'exit').mockImplementation((code?: number) => {
+    vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
       throw new Error(`process.exit called with ${code}`);
     });
 
@@ -55,7 +55,7 @@ describe('checkAccountEnabled', () => {
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       makeConfig([{ handle: '@foo', enabled: false }]) as any,
     );
-    vi.spyOn(process, 'exit').mockImplementation((code?: number) => {
+    vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
       throw new Error(`process.exit called with ${code}`);
     });
 
