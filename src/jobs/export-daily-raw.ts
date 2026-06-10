@@ -29,7 +29,7 @@ function main(): void {
   const posts = getPostsByHandleAndDate(handle, date);
 
   if (posts.length === 0) {
-    logger.info({ handle, date }, 'No posts for this date');
+    logger.warn({ handle, date }, 'No posts for this date — export skipped');
     return;
   }
 
