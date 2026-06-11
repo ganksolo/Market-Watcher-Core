@@ -18,6 +18,10 @@ export interface XUser {
 export interface XTweet {
   id: string;
   text: string;
+  note_tweet?: {
+    text?: string;
+    full_text?: string;
+  };
   created_at?: string;
   author_id?: string;
   conversation_id?: string;

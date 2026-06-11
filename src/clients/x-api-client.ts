@@ -4,7 +4,7 @@ import { sleep } from '../utils/sleep';
 
 dotenv.config();
 
-const BASE_URL = 'https://api.twitter.com/2';
+const BASE_URL = 'https://api.x.com/2';
 const MAX_RETRIES = 3;
 
 export class ApiError extends Error {

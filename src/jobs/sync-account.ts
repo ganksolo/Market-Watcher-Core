@@ -17,8 +17,14 @@ dotenv.config();
 
 const TWEET_FIELDS = [
   'id', 'text', 'created_at', 'author_id', 'conversation_id',
-  'in_reply_to_user_id', 'lang', 'public_metrics', 'referenced_tweets',
+  'in_reply_to_user_id', 'lang', 'public_metrics', 'referenced_tweets', 'note_tweet',
 ].join(',');
+
+function getTweetText(tweet: XTweet): string {
+  return tweet.note_tweet?.text
+    ?? tweet.note_tweet?.full_text
+    ?? tweet.text;
+}
 
 async function main(): Promise<void> {
   const handle = resolveHandle();
@@ -200,7 +206,7 @@ async function main(): Promise<void> {
           tweetId: tweet.id,
           authorId: tweet.author_id ?? xUserId,
           authorHandle: handle,
-          text: tweet.text,
+          text: getTweetText(tweet),
           lang: tweet.lang ?? null,
           createdAt: tweet.created_at ?? pageNow,
           conversationId: tweet.conversation_id ?? null,
